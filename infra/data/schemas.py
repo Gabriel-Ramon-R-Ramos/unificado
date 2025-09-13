@@ -5,17 +5,17 @@ class DisciplineBase(BaseModel):
     name: str
 
 class DisciplineCreate(DisciplineBase):
-    course_id: int  # Adicionar este campo obrigatório
+    course_id: int
     prerequisites: Optional[List[int]] = []
 
 class DisciplineRead(DisciplineBase):
     id: int
     course_id: int
-    prerequisites: List[int] = []  # Lista de IDs dos pré-requisitos
+    prerequisites: List[int] = []  # Lista de IDs das disciplinas pré-requisito
     warnings: Optional[List[str]] = []  # Lista de avisos, se houver
     
     class Config:
-        from_attributes = True  # Substitui orm_mode no Pydantic v2
+        from_attributes = True
         
     @model_validator(mode='before')
     @classmethod
@@ -44,4 +44,4 @@ class CourseRead(CourseBase):
     id: int
 
     class Config:
-        from_attributes = True  # Substitui orm_mode no Pydantic v2
+        from_attributes = True
