@@ -47,6 +47,7 @@ python -m pipx ensurepath
 
 ```powershell
 pipx install poetry
+pipx inject poetry poetry-plugin-shell
 
 # Verificar instalação
 poetry --version
@@ -55,8 +56,11 @@ poetry --version
 ### 3. Configurar o Poetry (Opcional)
 
 ```powershell
+# Baixar o python pelo gerenciador do poetry
+poetry python install 3.13
+
 # Criar .venv na pasta do projeto (recomendado)
-poetry config virtualenvs.in-project true
+poetry env use 3.13
 
 # Verificar configuração
 poetry config --list
@@ -98,15 +102,6 @@ DATABASE_URL=postgresql://postgres:suasenha@localhost:5432/unificado
 **Para desenvolvimento com SQLite:**
 ```env
 DATABASE_URL=sqlite:///./unificado.db
-```
-
-### 4. Configurar PostgreSQL (Opcional)
-
-```sql
--- Conectar como superuser e criar banco
-CREATE DATABASE unificado;
-CREATE USER unificado_user WITH PASSWORD 'suasenha';
-GRANT ALL PRIVILEGES ON DATABASE unificado TO unificado_user;
 ```
 
 ## 🏃‍♂️ Executando o Projeto
