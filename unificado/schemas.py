@@ -16,7 +16,6 @@ class DisciplinePublic(DisciplineSchema):
     id: int
     course_id: int
     prerequisites: List[int] = []  # Lista de IDs das disciplinas pré-requisito
-    warnings: Optional[List[str]] = []  # Lista de avisos, se houver
 
     class Config:
         from_attributes = True

@@ -1,6 +1,4 @@
-from datetime import datetime
-
-from sqlalchemy import Column, ForeignKey, Integer, Table, func
+from sqlalchemy import Column, ForeignKey, Integer, Table
 from sqlalchemy.orm import Mapped, mapped_column, registry, relationship
 
 table_registry = registry()
@@ -45,15 +43,6 @@ class Discipline:
     name: Mapped[str] = mapped_column(index=True, nullable=False)
     course_id: Mapped[int] = mapped_column(
         ForeignKey('courses.id'), nullable=False, index=True
-    )
-
-    created_at: Mapped[datetime] = mapped_column(
-        server_default=func.now(), init=False
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        server_default=func.now(),
-        onupdate=func.now(),
-        init=False,
     )
 
     course: Mapped['Course'] = relationship(

@@ -1,4 +1,5 @@
 from fastapi import Depends, FastAPI, HTTPException
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from unificado.database import get_session
@@ -57,7 +58,6 @@ def create_discipline(
     db.refresh(db_discipline)
 
     # Processar pré-requisitos se fornecidos
-    warning_messages = []
     if discipline.prerequisites:
         for prerequisite_id in discipline.prerequisites:
             prerequisite = (
@@ -67,24 +67,16 @@ def create_discipline(
             )
             if prerequisite:
                 db_discipline.prerequisites.append(prerequisite)
-            else:
-                warning_messages.append(
-                    f'Pré-requisito com ID {prerequisite_id} não encontrado'
-                )
 
         db.commit()
         db.refresh(db_discipline)
 
-    # Preparar resposta com warnings se houver
     response_data = {
         'id': db_discipline.id,
         'name': db_discipline.name,
         'course_id': db_discipline.course_id,
         'prerequisites': [prereq.id for prereq in db_discipline.prerequisites],
     }
-
-    if warning_messages:
-        response_data['warnings'] = warning_messages
 
     return response_data
 
@@ -93,8 +85,10 @@ def create_discipline(
 def read_disciplines(
     skip: int = 0, limit: int = 10, db: Session = Depends(get_session)
 ):
-    disciplines = db.query(Discipline).offset(skip).limit(limit).all()
-    return disciplines
+    db_disciplines = db.scalars(
+        select(Discipline).limit(limit).offset(skip)
+    ).all()
+    return db_disciplines
 
 
 @app.get('/disciplines/{discipline_id}', response_model=DisciplinePublic)
