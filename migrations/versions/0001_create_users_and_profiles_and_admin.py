@@ -26,7 +26,7 @@ def upgrade() -> None:
         sa.Column('email', sa.String(length=255), nullable=True, unique=True),
         sa.Column('password_hash', sa.String(), nullable=False),
         sa.Column('role', sa.String(length=20), nullable=False, server_default='student'),
-        sa.Column('is_active', sa.Boolean(), nullable=False, server_default=sa.text('1')),
+        sa.Column('is_active', sa.Boolean(), nullable=False, server_default=sa.text('true')),
     )
 
     # --- create student_profiles table ---
@@ -90,7 +90,7 @@ def upgrade() -> None:
             bind.execute(
                 sa.text(
                     "INSERT INTO users (username, email, password_hash, role, is_active) "
-                    "VALUES (:u, :e, :ph, 'admin', 1)"
+                    "VALUES (:u, :e, :ph, 'admin', True)"
                 ),
                 {"u": "admin", "e": admin_email, "ph": ph},
             )
