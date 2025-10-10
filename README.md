@@ -9,7 +9,9 @@ O projeto **Unificado** é uma aplicação para organizar cursos e suas discipli
 - ✅ **Gerenciamento de Cursos**: Criar, listar, buscar e atualizar cursos
 - ✅ **Gerenciamento de Disciplinas**: CRUD completo com validação de pré-requisitos
 - ✅ **Sistema de Pré-requisitos**: Relacionamento muitos-para-muitos entre disciplinas
+- ✅ **Sistema de Usuários**: Autenticação e autorização (estudantes, professores, admin)
 - ✅ **Validação Automática**: Detecção de dependências circulares
+- ✅ **Migrations Automáticas**: Versionamento de banco via Alembic
 - ✅ **API Documentada**: Swagger UI automático via FastAPI
 
 ### 🏗️ Arquitetura
@@ -92,16 +94,62 @@ Crie um arquivo `.env` na raiz do projeto:
 ```env
 # .env
 DATABASE_URL=postgresql://usuario:senha@localhost:5432/unificado_db
+DATABASE_URL_TEST=sqlite:///./test.db
+ADMIN_EMAIL=admin@local
+ADMIN_PASSWORD=senhaSegura123
 ```
 
 **Exemplo com PostgreSQL local:**
 ```env
 DATABASE_URL=postgresql://postgres:suasenha@localhost:5432/unificado
+DATABASE_URL_TEST=sqlite:///./test.db
+ADMIN_EMAIL=admin@dominio.com
+ADMIN_PASSWORD=minhasenha456
 ```
 
 **Para desenvolvimento com SQLite:**
 ```env
 DATABASE_URL=sqlite:///./unificado.db
+```
+
+### 4. Configurar Banco de Dados (Migrations)
+
+O projeto usa **Alembic** para gerenciar migrações de banco de dados. Siga os passos para criar/atualizar o esquema:
+
+```powershell
+# Verificar estado atual das migrations
+alembic current
+
+# Aplicar todas as migrations (criar/atualizar tabelas)
+alembic upgrade head
+
+# Verificar se aplicou corretamente
+alembic current
+```
+
+**Para desenvolvimento com dados iniciais:**
+
+Defina as credenciais do admin no `.env` para criar automaticamente um usuário administrador:
+
+```env
+# Adicionar ao .env
+ADMIN_EMAIL=admin@local
+ADMIN_PASSWORD=senhaSegura123
+```
+
+**Comandos úteis do Alembic:**
+
+```powershell
+# Ver histórico de migrations
+alembic history --verbose
+
+# Ver diferenças entre DB atual e models (para debug)
+alembic current
+alembic heads
+
+# Para teste em SQLite separado
+$env:DATABASE_URL_TEST = "sqlite:///./test.db"
+alembic upgrade head
 ```
 
 ## 🏃‍♂️ Executando o Projeto
@@ -224,8 +272,14 @@ Unificado/
 ├── README.md                 # Este arquivo
 ├── pyproject.toml           # Configurações Poetry + ferramentas
 ├── poetry.lock              # Lock das versões das dependências
+├── alembic.ini              # Configuração do Alembic
 ├── .env                     # Variáveis de ambiente (criar)
 ├── exemplo_uso.py           # Exemplo de uso dos models
+├── migrations/              # Migrações do banco de dados
+│   ├── env.py              # Configuração do Alembic
+│   └── versions/           # Arquivos de migração
+│       ├── 339dbadfaddc_create_discipline_and_courses_tables.py
+│       └── 0001_create_users_and_profiles_and_admin.py
 ├── tests/                   # Testes automatizados
 │   └── __init__.py
 └── unificado/              # Código principal
@@ -234,8 +288,60 @@ Unificado/
     ├── models.py           # Modelos SQLAlchemy
     ├── schemas.py          # Esquemas Pydantic
     ├── database.py         # Configuração do DB
+    ├── security.py         # Funções de segurança/hash
     └── settings.py         # Settings da aplicação
 ```
+
+## 🗃️ Gerenciamento do Banco de Dados
+
+### Migrations com Alembic
+
+O projeto utiliza **Alembic** para versionamento do esquema do banco. As migrations são aplicadas automaticamente na ordem correta:
+
+1. **339dbadfaddc** - Cria tabelas `courses`, `disciplines` e `discipline_prerequisites`
+2. **0001** - Cria tabelas `users`, `student_profiles`, `teacher_profiles` + usuário admin
+
+### Comandos de Desenvolvimento
+
+```powershell
+# Resetar banco para estado inicial (cuidado: remove dados!)
+alembic downgrade base
+
+# Aplicar migrations uma por uma (para debug)
+alembic upgrade 339dbadfaddc
+alembic upgrade 0001
+
+# Ver SQL que será executado (sem aplicar)
+alembic upgrade head --sql
+
+# Marcar banco como atualizado sem executar (se criou tabelas manualmente)
+alembic stamp head
+```
+
+### Estrutura das Tabelas
+
+Após aplicar as migrations, o banco terá:
+
+- **courses**: Cursos disponíveis
+- **disciplines**: Disciplinas de cada curso  
+- **discipline_prerequisites**: Relacionamento de pré-requisitos
+- **users**: Usuários do sistema (estudantes, professores, admin)
+- **student_profiles**: Perfis específicos de estudantes
+- **teacher_profiles**: Perfis específicos de professores
+
+### Usuário Admin Padrão
+
+A migration `0001` cria automaticamente um usuário administrador se `ADMIN_PASSWORD` estiver definido no `.env`:
+
+```env
+ADMIN_EMAIL=admin@dominio.com
+ADMIN_PASSWORD=suaSenhaSegura
+```
+
+**Credenciais padrão:**
+- Username: `admin`
+- Role: `admin`
+- Email e senha: conforme definido no `.env`
 
 ## 🤝 Contribuindo
 
