@@ -1,4 +1,6 @@
-from sqlalchemy import Column, ForeignKey, Integer, Table
+from typing import Optional
+
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Table
 from sqlalchemy.orm import Mapped, mapped_column, registry, relationship
 
 table_registry = registry()
@@ -73,4 +75,82 @@ class Discipline:
         back_populates='prerequisites',
         init=False,
         default_factory=list,
+    )
+
+
+@table_registry.mapped_as_dataclass
+class User:
+    __tablename__ = 'users'
+
+    id: Mapped[int] = mapped_column(primary_key=True, init=False)
+    username: Mapped[str] = mapped_column(
+        String(100), unique=True, index=True, nullable=False
+    )
+    email: Mapped[Optional[str]] = mapped_column(
+        String(255), unique=True, nullable=True
+    )
+    password_hash: Mapped[str] = mapped_column(nullable=False)
+    role: Mapped[str] = mapped_column(
+        String(20), nullable=False, default='student'
+    )  # 'student' | 'teacher' | 'admin'
+    is_active: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, init=False
+    )
+
+    # Perfis opcionais (one-to-one)
+    student_profile: Mapped[Optional['StudentProfile']] = relationship(
+        back_populates='user',
+        init=False,
+        uselist=False,
+        cascade='all, delete-orphan',
+    )
+    teacher_profile: Mapped[Optional['TeacherProfile']] = relationship(
+        back_populates='user',
+        init=False,
+        uselist=False,
+        cascade='all, delete-orphan',
+    )
+
+
+@table_registry.mapped_as_dataclass
+class StudentProfile:
+    __tablename__ = 'student_profiles'
+
+    # ID unico
+    id: Mapped[int] = mapped_column(primary_key=True, init=False)
+    # Relacionamento um-para-um com User
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey('users.id'), nullable=False, unique=True, index=True
+    )
+    # Número de matrícula do aluno (opcional)
+    ra_number: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
+
+    # Relacionamento inverso com User
+    user: Mapped['User'] = relationship(
+        back_populates='student_profile',
+        init=False,
+        passive_deletes=True,
+    )
+
+
+@table_registry.mapped_as_dataclass
+class TeacherProfile:
+    __tablename__ = 'teacher_profiles'
+
+    # ID unico
+    id: Mapped[int] = mapped_column(primary_key=True, init=False)
+    # Relacionamento um-para-um com User
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey('users.id'), nullable=False, unique=True, index=True
+    )
+    # Número de matrícula do professor (opcional)
+    employee_number: Mapped[Optional[str]] = mapped_column(
+        String(50), nullable=True
+    )
+
+    # Relacionamento inverso com User
+    user: Mapped['User'] = relationship(
+        back_populates='teacher_profile',
+        init=False,
+        passive_deletes=True,
     )
