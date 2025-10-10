@@ -7,3 +7,6 @@ class Settings(BaseSettings):
     )
 
     DATABASE_URL: str
+    DATABASE_URL_TEST: str = 'sqlite+pysqlite:///./test.db'
+    ADMIN_EMAIL: str
+    ADMIN_PASSWORD: str
