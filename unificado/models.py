@@ -24,6 +24,42 @@ discipline_prerequisites = Table(
     ),
 )
 
+# Professores e Disciplinas (muitos-para-muitos)
+teacher_disciplines = Table(
+    'teacher_disciplines',
+    table_registry.metadata,
+    Column(
+        'teacher_id',
+        Integer,
+        ForeignKey('teacher_profiles.id'),
+        primary_key=True,
+    ),
+    Column(
+        'discipline_id',
+        Integer,
+        ForeignKey('disciplines.id'),
+        primary_key=True,
+    ),
+)
+
+# Estudantes e Disciplinas (muitos-para-muitos)
+students_disciplines = Table(
+    'students_disciplines',
+    table_registry.metadata,
+    Column(
+        'student_id',
+        Integer,
+        ForeignKey('student_profiles.id'),
+        primary_key=True,
+    ),
+    Column(
+        'discipline_id',
+        Integer,
+        ForeignKey('disciplines.id'),
+        primary_key=True,
+    ),
+)
+
 
 @table_registry.mapped_as_dataclass
 class Course:
@@ -73,6 +109,20 @@ class Discipline:
             'Discipline.id == discipline_prerequisites.c.discipline_id'
         ),
         back_populates='prerequisites',
+        init=False,
+        default_factory=list,
+    )
+
+    teachers: Mapped[list['TeacherProfile']] = relationship(
+        secondary=teacher_disciplines,
+        back_populates='disciplines',
+        init=False,
+        default_factory=list,
+    )
+
+    students: Mapped[list['StudentProfile']] = relationship(
+        secondary=students_disciplines,
+        back_populates='disciplines',
         init=False,
         default_factory=list,
     )
@@ -132,6 +182,14 @@ class StudentProfile:
         passive_deletes=True,
     )
 
+    # Disciplinas cursadas
+    disciplines: Mapped[list['Discipline']] = relationship(
+        secondary=students_disciplines,
+        back_populates='students',
+        init=False,
+        default_factory=list,
+    )
+
 
 @table_registry.mapped_as_dataclass
 class TeacherProfile:
@@ -153,4 +211,12 @@ class TeacherProfile:
         back_populates='teacher_profile',
         init=False,
         passive_deletes=True,
+    )
+
+    # Disciplinas lecionadas
+    disciplines: Mapped[list['Discipline']] = relationship(
+        secondary=teacher_disciplines,
+        back_populates='teachers',
+        init=False,
+        default_factory=list,
     )

@@ -92,7 +92,9 @@ def read_disciplines(
 
 
 @app.get('/disciplines/{discipline_id}', response_model=DisciplinePublic)
-def read_discipline(discipline_id: int, db: Session = Depends(get_session)):
+def read_discipline_by_id(
+    discipline_id: int, db: Session = Depends(get_session)
+):
     """Busca uma disciplina específica pelo ID"""
     discipline = (
         db.query(Discipline).filter(Discipline.id == discipline_id).first()
