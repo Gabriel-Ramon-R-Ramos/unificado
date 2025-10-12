@@ -331,7 +331,7 @@ def create_student(
     current_user: dict = Depends(require_role('admin')),
 ):
     """Criar um novo estudante - APENAS ADMIN"""
-    # Verificar se o username ou email já existe
+    # Verificar se o username ou email já existe (incluindo usuários inativos)
     existing_user = (
         db.query(User)
         .filter(
@@ -340,12 +340,22 @@ def create_student(
         .first()
     )
     if existing_user:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail='Username ou email já existe',
-        )
+        if existing_user.is_active:
+            raise HTTPException(
+                status_code=HTTPStatus.BAD_REQUEST,
+                detail='Username ou email já existe',
+            )
+        else:
+            # Se o usuário existe mas está inativo, pode reativar
+            raise HTTPException(
+                status_code=HTTPStatus.BAD_REQUEST,
+                detail=(
+                    'Username ou email já existe (usuário inativo).'
+                    'Entre em contato com o administrador para reativação.'
+                ),
+            )
 
-    # Criar o usuário
+    # Criar o usuário (sempre ativo ao criar)
     user = User(
         username=student.username,
         email=student.email,
@@ -400,17 +410,21 @@ def create_student(
 def read_students(
     skip: int = 0,
     limit: int = 10,
+    show_inactive: bool = False,  # Novo parâmetro para admin ver inativos
     db: Session = Depends(get_session),
     current_user: dict = Depends(require_role('teacher', 'admin')),
 ):
-    """Listar estudantes - PROFESSORES E ADMINS"""
-    students = (
-        db.query(User)
-        .filter(User.role == 'student')
-        .offset(skip)
-        .limit(limit)
-        .all()
-    )
+    """
+    Listar estudantes - PROFESSORES E ADMINS
+    show_inactive: apenas admin pode ver usuários inativos
+    """
+    query = db.query(User).filter(User.role == 'student')
+
+    # Filtrar por status ativo
+    if not show_inactive or current_user['role'] != 'admin':
+        query = query.filter(User.is_active)
+
+    students = query.offset(skip).limit(limit).all()
     return [
         StudentPublic(
             id=student.id,
@@ -435,8 +449,9 @@ def read_student(
 ):
     """
     Ver dados de estudante específico:
-    - Estudantes: apenas próprios dados
-    - Professores e Admins: qualquer estudante
+    - Estudantes: apenas próprios dados (se ativo)
+    - Professores: qualquer estudante ativo
+    - Admins: qualquer estudante (ativo ou inativo)
     """
     user_role = current_user['role']
     user_id = current_user['id']
@@ -452,16 +467,29 @@ def read_student(
             status_code=status.HTTP_403_FORBIDDEN,
             detail='Role não autorizada',
         )
-    student = (
-        db.query(User)
-        .filter(User.id == student_id, User.role == 'student')
-        .first()
+
+    # Buscar estudante
+    query = db.query(User).filter(
+        User.id == student_id, User.role == 'student'
     )
+
+    # Apenas admin pode ver usuários inativos
+    if user_role != 'admin':
+        query = query.filter(User.is_active.is_(True))
+
+    student = query.first()
+
     if not student:
-        raise HTTPException(
-            status_code=HTTPStatus.NOT_FOUND,
-            detail='Estudante não encontrado',
-        )
+        if user_role == 'admin':
+            raise HTTPException(
+                status_code=HTTPStatus.NOT_FOUND,
+                detail='Estudante não encontrado',
+            )
+        else:
+            raise HTTPException(
+                status_code=HTTPStatus.NOT_FOUND,
+                detail='Estudante não encontrado ou inativo',
+            )
     return student
 
 
@@ -477,14 +505,20 @@ def update_student(
     """Atualizar dados de estudante - APENAS ADMIN"""
     user = (
         db.query(User)
-        .filter(User.id == student_id, User.role == 'student')
+        .filter(
+            User.id == student_id,
+            User.role == 'student',
+            User.is_active.is_(
+                True
+            ),  # Apenas usuários ativos podem ser atualizados
+        )
         .first()
     )
 
     if not user:
         raise HTTPException(
             status_code=HTTPStatus.NOT_FOUND,
-            detail='Estudante não encontrado',
+            detail='Estudante ativo não encontrado',
         )
 
     # Atualizanado nome do usuário
@@ -552,13 +586,17 @@ def add_disciplines(
     # Buscar estudante e carregar o perfil
     student = (
         db.query(User)
-        .filter(User.id == student_id, User.role == 'student')
+        .filter(
+            User.id == student_id,
+            User.role == 'student',
+            User.is_active.is_(True),  # Apenas usuários ativos
+        )
         .first()
     )
     if not student:
         raise HTTPException(
             status_code=HTTPStatus.NOT_FOUND,
-            detail='Estudante não encontrado',
+            detail='Estudante ativo não encontrado',
         )
 
     # Verificar se o estudante tem perfil
@@ -610,13 +648,17 @@ def remove_discipline(
     # Buscar estudante
     student = (
         db.query(User)
-        .filter(User.id == student_id, User.role == 'student')
+        .filter(
+            User.id == student_id,
+            User.role == 'student',
+            User.is_active.is_(True),  # Apenas usuários ativos
+        )
         .first()
     )
     if not student:
         raise HTTPException(
             status_code=HTTPStatus.NOT_FOUND,
-            detail='Estudante não encontrado',
+            detail='Estudante ativo não encontrado',
         )
 
     # Verificar se o estudante tem perfil
@@ -665,7 +707,7 @@ def create_teacher(
             detail='Username ou email já existe',
         )
 
-    # Criar o usuário
+    # Criar o usuário (sempre ativo ao criar)
     user = User(
         username=teacher.username,
         email=teacher.email,
@@ -721,15 +763,33 @@ def create_teacher(
 def read_teachers(
     skip: int = 0,
     limit: int = 10,
+    show_inactive: bool = False,  # Novo parâmetro para admin ver inativos
     db: Session = Depends(get_session),
     current_user: dict = Depends(get_current_user_from_token),
 ):
-    """Listar professores - Admin vê todos, Professor vê apenas ele mesmo"""
-    if current_user['role'] == 'admin' or current_user['role'] == 'teacher':
+    """
+    Listar professores - Admin vê todos, Professor vê apenas ele mesmo
+    show_inactive: apenas admin pode ver usuários inativos
+    """
+    if current_user['role'] == 'admin':
         # Admin pode ver todos os professores
+        query = db.query(User).filter(User.role == 'teacher')
+
+        # Filtrar por status ativo se necessário
+        if not show_inactive:
+            query = query.filter(User.is_active.is_(True))
+
+        teachers = query.offset(skip).limit(limit).all()
+
+    elif current_user['role'] == 'teacher':
+        # Professor pode ver apenas ele mesmo (se ativo)
         teachers = (
             db.query(User)
-            .filter(User.role == 'teacher')
+            .filter(
+                User.role == 'teacher',
+                User.id == current_user['id'],
+                User.is_active.is_(True),
+            )
             .offset(skip)
             .limit(limit)
             .all()
@@ -764,32 +824,46 @@ def read_teacher(
     db: Session = Depends(get_session),
     current_user: dict = Depends(get_current_user_from_token),
 ):
-    """Buscar professor por ID -
-    Admin pode ver qualquer professor, Professor pode ver apenas ele mesmo"""
+    """
+    Buscar professor por ID:
+    - Admin pode ver qualquer professor (ativo ou inativo)
+    - Professor pode ver apenas ele mesmo (se ativo)
+    - Estudante não pode ver professores
+    """
     if current_user['role'] == 'student':
         raise HTTPException(
             status_code=403,
             detail='Estudantes não têm permissão para visualizar professores',
         )
 
-    if (
-        current_user['role'] == 'teacher'
-        and current_user['user_id'] != teacher_id
-    ):
+    if current_user['role'] == 'teacher' and current_user['id'] != teacher_id:
         raise HTTPException(
             status_code=403,
             detail='Professores só podem visualizar seus próprios dados',
         )
-    teacher = (
-        db.query(User)
-        .filter(User.id == teacher_id, User.role == 'teacher')
-        .first()
+
+    # Buscar professor
+    query = db.query(User).filter(
+        User.id == teacher_id, User.role == 'teacher'
     )
+
+    # Apenas admin pode ver usuários inativos
+    if current_user['role'] != 'admin':
+        query = query.filter(User.is_active.is_(True))
+
+    teacher = query.first()
+
     if not teacher:
-        raise HTTPException(
-            status_code=HTTPStatus.NOT_FOUND,
-            detail='Professor não encontrado',
-        )
+        if current_user['role'] == 'admin':
+            raise HTTPException(
+                status_code=HTTPStatus.NOT_FOUND,
+                detail='Professor não encontrado',
+            )
+        else:
+            raise HTTPException(
+                status_code=HTTPStatus.NOT_FOUND,
+                detail='Professor não encontrado ou inativo',
+            )
     return teacher
 
 
@@ -807,14 +881,20 @@ def update_teacher(
     """Atualizar dados do professor - APENAS ADMIN"""
     user = (
         db.query(User)
-        .filter(User.id == teacher_id, User.role == 'teacher')
+        .filter(
+            User.id == teacher_id,
+            User.role == 'teacher',
+            User.is_active.is_(
+                True
+            ),  # Apenas usuários ativos podem ser atualizados
+        )
         .first()
     )
 
     if not user:
         raise HTTPException(
             status_code=HTTPStatus.NOT_FOUND,
-            detail='Professor não encontrado',
+            detail='Professor ativo não encontrado',
         )
 
     # Atualizando nome do usuário
@@ -884,13 +964,17 @@ def add_discipline_to_teacher(
     # Buscar professor
     teacher = (
         db.query(User)
-        .filter(User.id == teacher_id, User.role == 'teacher')
+        .filter(
+            User.id == teacher_id,
+            User.role == 'teacher',
+            User.is_active.is_(True),  # Apenas usuários ativos
+        )
         .first()
     )
     if not teacher:
         raise HTTPException(
             status_code=HTTPStatus.NOT_FOUND,
-            detail='Professor não encontrado',
+            detail='Professor ativo não encontrado',
         )
 
     # Verificar se o professor tem perfil
@@ -941,13 +1025,17 @@ def remove_discipline_from_teacher(
     # Buscar professor
     teacher = (
         db.query(User)
-        .filter(User.id == teacher_id, User.role == 'teacher')
+        .filter(
+            User.id == teacher_id,
+            User.role == 'teacher',
+            User.is_active.is_(True),  # Apenas usuários ativos
+        )
         .first()
     )
     if not teacher:
         raise HTTPException(
             status_code=HTTPStatus.NOT_FOUND,
-            detail='Professor não encontrado',
+            detail='Professor ativo não encontrado',
         )
 
     # Verificar se o professor tem perfil
@@ -1055,6 +1143,86 @@ def login_for_access_token(
             is_active=user.is_active,
         ),
     )
+
+
+@router_v1.get('/users', tags=['Usuários'])
+def list_all_users(
+    show_inactive: bool = False,
+    skip: int = 0,
+    limit: int = 10,
+    db: Session = Depends(get_session),
+    _: dict = Depends(require_role('admin')),
+):
+    """
+    Listar todos os usuários - APENAS ADMIN
+    """
+    query = db.query(User)
+
+    if not show_inactive:
+        query = query.filter(User.is_active.is_(True))
+
+    users = query.offset(skip).limit(limit).all()
+
+    users_serialized = [
+        UserPublic(
+            id=user.id,
+            username=user.username,
+            email=user.email,
+            role=user.role,
+            is_active=user.is_active,
+        )
+        for user in users
+    ]
+
+    return {
+        'users': users_serialized,
+        'total': query.count(),
+        'skip': skip,
+        'limit': limit,
+        'showing_inactive': show_inactive,
+    }
+
+
+@router_v1.patch('/users/{user_id}/toggle-active', tags=['Usuários'])
+def toggle_user_active_status(
+    user_id: int,
+    db: Session = Depends(get_session),
+    current_user: dict = Depends(require_role('admin')),
+):
+    """
+    Ativar/Desativar usuário (Soft Delete) - APENAS ADMIN
+    """
+    user = db.query(User).filter(User.id == user_id).first()
+
+    if not user:
+        raise HTTPException(
+            status_code=HTTPStatus.NOT_FOUND,
+            detail='Usuário não encontrado',
+        )
+
+    # Não permitir desativar o próprio usuário admin
+    if user.id == current_user['id'] and user.role == 'admin':
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail='Não é possível desativar seu próprio usuário admin',
+        )
+
+    # Alternar status
+    user.is_active = not user.is_active
+    db.commit()
+    db.refresh(user)
+
+    action = 'ativado' if user.is_active else 'desativado'
+
+    return {
+        'message': f'Usuário {action} com sucesso',
+        'user': {
+            'id': user.id,
+            'username': user.username,
+            'role': user.role,
+            'is_active': user.is_active,
+        },
+    }
 
 
 @router_v1.get('/me', response_model=UserPublic, tags=['Usuários'])
