@@ -78,7 +78,7 @@ class Discipline:
     __tablename__ = 'disciplines'
 
     id: Mapped[int] = mapped_column(primary_key=True, init=False)
-    name: Mapped[str] = mapped_column(index=True, nullable=False)
+    name: Mapped[str] = mapped_column(index=True, nullable=False, unique=True)
     course_id: Mapped[int] = mapped_column(
         ForeignKey('courses.id'), nullable=False, index=True
     )
