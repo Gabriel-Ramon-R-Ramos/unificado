@@ -10,3 +10,6 @@ class Settings(BaseSettings):
     DATABASE_URL_TEST: str = 'sqlite+pysqlite:///./test.db'
     ADMIN_EMAIL: str
     ADMIN_PASSWORD: str
+    SECRET_KEY: str
+    ALGORITHM: str
+    ACCESS_TOKEN_EXPIRE_MINUTES: int
