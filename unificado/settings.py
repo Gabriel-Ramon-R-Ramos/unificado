@@ -13,3 +13,4 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     ALGORITHM: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int
+    RUN_MIGRATIONS: bool = False
