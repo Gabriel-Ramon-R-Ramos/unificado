@@ -1,8 +1,10 @@
+import logging
 from http import HTTPStatus
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, status
 from fastapi.openapi.utils import get_openapi
-from sqlalchemy import select
+from fastapi.responses import JSONResponse
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from unificado.database import get_session
@@ -35,6 +37,7 @@ from unificado.security import (
     require_role,
     verify_password,
 )
+from unificado.settings import Settings
 
 app = FastAPI(
     title='Rede de Conhecimento',
@@ -75,6 +78,52 @@ app = FastAPI(
         'persistAuthorization': True,  # Mantém o token após refresh
     },
 )
+
+# ======= Remover =======
+
+# Configuração mínima de logging para a aplicação
+logger = logging.getLogger('unificado')
+if not logger.handlers:
+    handler = logging.StreamHandler()
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    )
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
+    logger.setLevel(logging.INFO)
+
+
+@app.on_event('startup')
+async def on_startup():
+    # Log de inicialização (não expor segredos)
+    try:
+        s = Settings()  # type: ignore
+        logger.info('Starting application (db host=%s)', s.DATABASE_URL)
+    except Exception:
+        logger.info('Starting application (could not read Settings)')
+
+
+@app.on_event('shutdown')
+async def on_shutdown():
+    logger.info('Shutting down application')
+
+
+@app.get('/health', tags=['Sistema'])
+def health(db: Session = Depends(get_session)):
+    try:
+        db.execute(text('SELECT 1'))
+        return JSONResponse(
+            status_code=200, content={'status': 'ok', 'db': True}
+        )
+    except Exception as exc:  # pragma: no cover - runtime error path
+        logger.exception('Health check failed: %s', exc)
+        return JSONResponse(
+            status_code=503,
+            content={'status': 'unhealthy', 'db': False, 'error': str(exc)},
+        )
+
+
+# ======= END Remover =======
 
 # Configurar esquema de segurança para documentação
 security_scheme = {

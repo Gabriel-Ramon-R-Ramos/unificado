@@ -36,4 +36,4 @@ EXPOSE 8000
 # Usamos um entrypoint que pode aplicar migrations automaticamente antes de iniciar
 ENTRYPOINT ["./docker-entrypoint.sh"]
 # Comando padrão para iniciar a aplicação
-CMD ["uvicorn", "unificado.app:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "unificado.app:app", "--host", "0.0.0.0", "--port", "8000", "--log-level", "debug"]
