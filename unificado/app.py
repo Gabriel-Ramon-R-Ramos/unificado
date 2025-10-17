@@ -2,6 +2,7 @@ import logging
 from http import HTTPStatus
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, status
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
 from sqlalchemy import select, text
@@ -77,6 +78,20 @@ app = FastAPI(
     swagger_ui_parameters={
         'persistAuthorization': True,  # Mantém o token após refresh
     },
+)
+
+# Configuração de CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",    # React padrão
+        "http://localhost:5173",    # Vite padrão
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # ======= Remover =======
