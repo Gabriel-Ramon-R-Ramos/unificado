@@ -38,7 +38,6 @@ from unificado.security import (
     require_role,
     verify_password,
 )
-from unificado.settings import Settings
 
 app = FastAPI(
     title='Rede de Conhecimento',
@@ -84,43 +83,15 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:3000",    # React padrão
-        "http://localhost:5173",    # Vite padrão
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:5173",
+        'http://localhost:3000',  # React padrão
+        'http://localhost:5173',  # Vite padrão
+        'http://127.0.0.1:3000',
+        'http://127.0.0.1:5173',
     ],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=['*'],
+    allow_headers=['*'],
 )
-
-# ======= Remover =======
-
-# Configuração mínima de logging para a aplicação
-logger = logging.getLogger('unificado')
-if not logger.handlers:
-    handler = logging.StreamHandler()
-    formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-    )
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
-    logger.setLevel(logging.INFO)
-
-
-@app.on_event('startup')
-async def on_startup():
-    # Log de inicialização (não expor segredos)
-    try:
-        s = Settings()  # type: ignore
-        logger.info('Starting application (db host=%s)', s.DATABASE_URL)
-    except Exception:
-        logger.info('Starting application (could not read Settings)')
-
-
-@app.on_event('shutdown')
-async def on_shutdown():
-    logger.info('Shutting down application')
 
 
 @app.get('/health', tags=['Sistema'])
@@ -130,15 +101,12 @@ def health(db: Session = Depends(get_session)):
         return JSONResponse(
             status_code=200, content={'status': 'ok', 'db': True}
         )
-    except Exception as exc:  # pragma: no cover - runtime error path
-        logger.exception('Health check failed: %s', exc)
+    except Exception as exc:
         return JSONResponse(
             status_code=503,
             content={'status': 'unhealthy', 'db': False, 'error': str(exc)},
         )
 
-
-# ======= END Remover =======
 
 # Configurar esquema de segurança para documentação
 security_scheme = {

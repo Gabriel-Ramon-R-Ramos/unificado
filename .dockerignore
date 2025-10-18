@@ -12,9 +12,8 @@ venv/
 # Env files
 .env
 
-# Tests and migrations not needed in production image
+# Tests not needed in production image
 tests/
-migrations/
 
 # Editor configs
 .vscode/
