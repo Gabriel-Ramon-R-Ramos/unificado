@@ -294,33 +294,6 @@ class PasswordChange(BaseModel):
 # ===== SCHEMAS DE AUTENTICAÇÃO =====
 
 
-class LoginForm(BaseModel):
-    """Formulário de login flexível
-
-    Permite login por:
-    - username (sempre disponível)
-    - email (se cadastrado)
-    - ra_number (se for estudante)
-    - employee_number (se for professor)
-
-    @Attributes
-        identifier: pode ser username, email, RA ou número de funcionário
-        password: senha do usuário
-    """
-
-    identifier: str
-    password: str
-
-    class Config:
-        json_schema_extra = {
-            'example': {
-                # ou email@exemplo.com, ou RA123, ou FUNC456
-                'identifier': 'usuario123',
-                'password': 'minha_senha',
-            }
-        }
-
-
 class Token(BaseModel):
     """Resposta do endpoint de login com token JWT
 

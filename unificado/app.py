@@ -1,10 +1,9 @@
-import logging
 from http import HTTPStatus
 
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.openapi.utils import get_openapi
 from fastapi.responses import JSONResponse
+from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
@@ -21,7 +20,6 @@ from unificado.schemas import (
     CoursePublic,
     DisciplineCreate,
     DisciplinePublic,
-    LoginForm,
     StudentCreate,
     StudentPublic,
     StudentUpdate,
@@ -107,51 +105,6 @@ def health(db: Session = Depends(get_session)):
             content={'status': 'unhealthy', 'db': False, 'error': str(exc)},
         )
 
-
-# Configurar esquema de segurança para documentação
-security_scheme = {
-    'Bearer': {
-        'type': 'http',
-        'scheme': 'bearer',
-        'bearerFormat': 'JWT',
-        'description': (
-            "Digite o token JWT no formato:seu_token_aqui (sem 'Bearer')"
-        ),
-    }
-}
-
-# Aplicar esquema de segurança
-app.openapi_schema = None  # Força recriação do schema
-
-
-def custom_openapi():
-    if app.openapi_schema:
-        return app.openapi_schema
-
-    openapi_schema = get_openapi(
-        title=app.title,
-        version=app.version,
-        description=app.description,
-        routes=app.routes,
-    )
-
-    # Adicionar esquema de segurança
-    openapi_schema['components']['securitySchemes'] = security_scheme
-
-    # Adicionar segurança a todos os endpoints protegidos
-    for path_item in openapi_schema.get('paths', {}).values():
-        for operation in path_item.values():
-            if isinstance(operation, dict) and 'tags' in operation:
-                # Não aplicar segurança no endpoint de login
-                if operation.get('operationId') != 'login_for_access_token':
-                    # Adicionar segurança Bearer para todos os outros endpoints
-                    operation['security'] = [{'Bearer': []}]
-
-    app.openapi_schema = openapi_schema
-    return app.openapi_schema
-
-
-app.openapi = custom_openapi
 
 router_v1 = APIRouter(prefix='/api/v1')
 
@@ -313,6 +266,7 @@ def add_prerequisite(
     discipline_id: int,
     prerequisite_id: int,
     db: Session = Depends(get_session),
+    current_user: dict = Depends(require_role('admin')),
 ):
     """Adiciona uma disciplina como pré-requisito de outra"""
     # Verificar se não está tentando adicionar uma disciplina
@@ -1094,18 +1048,23 @@ def remove_discipline_from_teacher(
 
 @router_v1.post('/login', response_model=Token, tags=['Usuários'])
 def login_for_access_token(
-    login_data: LoginForm,
+    form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_session),
 ):
     """
-    Login flexível que aceita:
-    - Username
-    - Email
-    - RA (para estudantes)
-    - Número de funcionário (para professores)
+    Login flexível OAuth2 que aceita no campo 'username':
+    - Username: admin
+    - Email: admin@local.com
+    - RA: 202301001 (estudantes)
+    - Número de funcionário: FUNC001 (professores)
+
+    Campos obrigatórios:
+    - username: qualquer identificador acima
+    - password: senha do usuário
+    - client_id: qualquer valor (ex: 'web')
     """
     user = None
-    identifier = login_data.identifier.strip()
+    identifier = form_data.username.strip()
 
     # Tentar encontrar usuário por diferentes métodos
     # 1. Por username
@@ -1135,14 +1094,15 @@ def login_for_access_token(
         if teacher_profile:
             user = teacher_profile.user
 
-    # Verificar se usuário existe e senha está correta
+    # Verificar se usuário existe
     if not user:
         raise HTTPException(
             status_code=HTTPStatus.UNAUTHORIZED,
             detail='Credenciais inválidas',
         )
 
-    if not verify_password(login_data.password, user.password_hash):
+    # Verificar senha
+    if not verify_password(form_data.password, user.password_hash):
         raise HTTPException(
             status_code=HTTPStatus.UNAUTHORIZED,
             detail='Credenciais inválidas',

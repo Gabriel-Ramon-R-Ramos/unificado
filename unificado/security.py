@@ -3,7 +3,7 @@ from zoneinfo import ZoneInfo
 
 import jwt
 from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi.security import OAuth2PasswordBearer
 from pwdlib import PasswordHash
 
 from unificado.settings import Settings
@@ -13,7 +13,7 @@ ALGORITHM = Settings().ALGORITHM  # type: ignore
 ACCESS_TOKEN_EXPIRE_MINUTES = Settings().ACCESS_TOKEN_EXPIRE_MINUTES  # type: ignore
 
 pwd_context = PasswordHash.recommended()
-security = HTTPBearer()
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl='/api/v1/login')
 
 
 def get_password_hash(password: str):
@@ -72,7 +72,7 @@ def decode_access_token(token: str):
 
 
 def get_current_user_from_token(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    token: str = Depends(oauth2_scheme),
 ):
     """
     Dependency para extrair usuário atual do JWT token
@@ -83,7 +83,6 @@ def get_current_user_from_token(
     Raises:
         HTTPException: Se token inválido ou usuário não encontrado
     """
-    token = credentials.credentials
     payload = decode_access_token(token)
 
     # Extrair dados do token
