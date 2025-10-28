@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Literal, Optional
 
 from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Table
 from sqlalchemy.orm import Mapped, mapped_column, registry, relationship
@@ -60,6 +60,24 @@ students_disciplines = Table(
     ),
 )
 
+# Cursos e Disciplinas (muitos-para-muitos)
+course_disciplines = Table(
+    'course_disciplines',
+    table_registry.metadata,
+    Column(
+        'course_id',
+        Integer,
+        ForeignKey('courses.id'),
+        primary_key=True,
+    ),
+    Column(
+        'discipline_id',
+        Integer,
+        ForeignKey('disciplines.id'),
+        primary_key=True,
+    ),
+)
+
 
 @table_registry.mapped_as_dataclass
 class Course:
@@ -68,8 +86,11 @@ class Course:
     id: Mapped[int] = mapped_column(primary_key=True, init=False)
     name: Mapped[str] = mapped_column(unique=True, index=True, nullable=False)
 
-    disciplines: Mapped[list['Discipline']] = relationship(
-        back_populates='course', init=False, default_factory=list
+    curriculum: Mapped[list['Discipline']] = relationship(
+        secondary=course_disciplines,
+        back_populates='courses',
+        init=False,
+        default_factory=list,
     )
 
 
@@ -79,12 +100,12 @@ class Discipline:
 
     id: Mapped[int] = mapped_column(primary_key=True, init=False)
     name: Mapped[str] = mapped_column(index=True, nullable=False, unique=True)
-    course_id: Mapped[int] = mapped_column(
-        ForeignKey('courses.id'), nullable=False, index=True
-    )
 
-    course: Mapped['Course'] = relationship(
-        back_populates='disciplines', init=False
+    courses: Mapped[list['Course']] = relationship(
+        secondary=course_disciplines,
+        back_populates='curriculum',
+        init=False,
+        default_factory=list,
     )
 
     prerequisites: Mapped[list['Discipline']] = relationship(
@@ -140,7 +161,7 @@ class User:
         String(255), unique=True, nullable=True
     )
     password_hash: Mapped[str] = mapped_column(nullable=False)
-    role: Mapped[str] = mapped_column(
+    role: Mapped[Literal['student', 'teacher', 'admin']] = mapped_column(
         String(20), nullable=False, default='student'
     )  # 'student' | 'teacher' | 'admin'
     is_active: Mapped[bool] = mapped_column(
