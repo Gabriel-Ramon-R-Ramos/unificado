@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, EmailStr, model_validator
 
@@ -272,7 +272,7 @@ class UserPublic(BaseModel):
     id: int
     username: str
     email: Optional[str] = None
-    role: str
+    role: Literal['student', 'teacher', 'admin']
     is_active: bool
 
     class Config:
@@ -319,4 +319,4 @@ class TokenData(BaseModel):
 
     username: Optional[str] = None
     user_id: Optional[int] = None
-    role: Optional[str] = None
+    role: Optional[Literal['student', 'teacher', 'admin']] = None

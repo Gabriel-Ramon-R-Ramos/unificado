@@ -20,7 +20,10 @@ from unificado.security import (
     verify_password,
 )
 
-router = APIRouter(prefix='/login', tags=['Autenticação'], )
+router = APIRouter(
+    prefix='/login',
+    tags=['Autenticação'],
+)
 
 
 @router.post('/', response_model=Token)
