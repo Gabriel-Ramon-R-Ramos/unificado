@@ -25,6 +25,7 @@ app = FastAPI(
 # Configuração de CORS
 app.add_middleware(
     CORSMiddleware,
+    allow_origin_regex=r'^https://[a-zA-Z0-9-]+\.[a-z]+-[a-z]+-\d+\.awsapprunner\.com$',
     allow_origins=[
         'http://localhost:3000',  # React padrão
         'http://localhost:5173',  # Vite padrão
