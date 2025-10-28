@@ -7,7 +7,7 @@ from unificado.settings import Settings
 def get_engine():
     settings = Settings()  # type: ignore
     try:
-        _engine = create_engine(settings.DATABASE_URL_TEST)  # pyright: ignore[reportCallIssue]
+        _engine = create_engine(settings.DATABASE_URL)  # pyright: ignore[reportCallIssue]
     except Exception:
         raise
 
