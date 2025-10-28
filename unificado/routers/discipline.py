@@ -31,14 +31,19 @@ def create_discipline(
     current_user: dict = Depends(require_role('admin')),
 ):
     """Criar uma nova disciplina - APENAS ADMIN"""
-    # Verificar se o curso existe
-    course = db.query(Course).filter(Course.id == discipline.course_id).first()
-    if not course:
-        raise HTTPException(
-            status_code=HTTPStatus.NOT_FOUND, detail='Curso não encontrado'
-        )
+    # Verificar se os cursos existem (se fornecidos)
+    courses = []
+    if discipline.course_ids:
+        for course_id in discipline.course_ids:
+            course = db.query(Course).filter(Course.id == course_id).first()
+            if not course:
+                raise HTTPException(
+                    status_code=HTTPStatus.NOT_FOUND,
+                    detail=f'Curso com ID {course_id} não encontrado'
+                )
+            courses.append(course)
 
-    # Verfica se o nome da disciplina já esxiste
+    # Verificar se o nome da disciplina já existe
     discipline_name = (
         db.query(Discipline).filter(Discipline.name == discipline.name).first()
     )
@@ -48,13 +53,15 @@ def create_discipline(
             detail='Já existe disciplina com esse nome',
         )
 
-    # Criar a disciplina
-    db_discipline = Discipline(
-        name=discipline.name, course_id=discipline.course_id
-    )
+    # Criar a disciplina (sem course_id)
+    db_discipline = Discipline(name=discipline.name)
     db.add(db_discipline)
     db.commit()
     db.refresh(db_discipline)
+
+    # Associar aos cursos
+    for course in courses:
+        db_discipline.courses.append(course)
 
     # Processar pré-requisitos se fornecidos
     if discipline.prerequisites:
@@ -67,17 +74,10 @@ def create_discipline(
             if prerequisite:
                 db_discipline.prerequisites.append(prerequisite)
 
-        db.commit()
-        db.refresh(db_discipline)
+    db.commit()
+    db.refresh(db_discipline)
 
-    response_data = {
-        'id': db_discipline.id,
-        'name': db_discipline.name,
-        'course_id': db_discipline.course_id,
-        'prerequisites': [prereq.id for prereq in db_discipline.prerequisites],
-    }
-
-    return response_data
+    return db_discipline
 
 
 @router.get(
@@ -164,6 +164,90 @@ def add_prerequisite(
 
     # Adiciona o pré-requisito
     discipline.prerequisites.append(prerequisite)
+    db.commit()
+    db.refresh(discipline)
+
+    return discipline
+
+
+@router.post(
+    '/{discipline_id}/courses/{course_id}',
+    response_model=DisciplinePublic,
+)
+def add_discipline_to_course(
+    discipline_id: int,
+    course_id: int,
+    db: Session = Depends(get_session),
+    current_user: dict = Depends(require_role('admin')),
+):
+    """Associa uma disciplina a um curso"""
+    # Buscar a disciplina
+    discipline = (
+        db.query(Discipline).filter(Discipline.id == discipline_id).first()
+    )
+    if not discipline:
+        raise HTTPException(
+            status_code=404, detail='Disciplina não encontrada'
+        )
+
+    # Buscar o curso
+    course = db.query(Course).filter(Course.id == course_id).first()
+    if not course:
+        raise HTTPException(
+            status_code=404, detail='Curso não encontrado'
+        )
+
+    # Verificar se a associação já existe
+    if course in discipline.courses:
+        raise HTTPException(
+            status_code=400,
+            detail='Disciplina já está associada a este curso'
+        )
+
+    # Adicionar a associação
+    discipline.courses.append(course)
+    db.commit()
+    db.refresh(discipline)
+
+    return discipline
+
+
+@router.delete(
+    '/{discipline_id}/courses/{course_id}',
+    response_model=DisciplinePublic,
+)
+def remove_discipline_from_course(
+    discipline_id: int,
+    course_id: int,
+    db: Session = Depends(get_session),
+    current_user: dict = Depends(require_role('admin')),
+):
+    """Remove a associação entre uma disciplina e um curso"""
+    # Buscar a disciplina
+    discipline = (
+        db.query(Discipline).filter(Discipline.id == discipline_id).first()
+    )
+    if not discipline:
+        raise HTTPException(
+            status_code=404, detail='Disciplina não encontrada'
+        )
+
+    # Buscar o curso
+    course = db.query(Course).filter(Course.id == course_id).first()
+    if not course:
+        raise HTTPException(
+            status_code=404, detail='Curso não encontrado'
+        )
+
+    # Verificar se a associação existe
+    if course not in discipline.courses:
+        raise HTTPException(
+            status_code=400,
+            detail='Disciplina não está associada a este curso'
+        )
+
+    # Remover a associação
+    discipline.courses.remove(course)
     db.commit()
     db.refresh(discipline)
 

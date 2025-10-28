@@ -62,3 +62,30 @@ def read_course(
     if not course:
         raise HTTPException(status_code=404, detail='Curso não encontrado')
     return course
+
+
+@router.get(
+    '/{course_id}/disciplines',
+    response_model=list,
+)
+def read_course_disciplines(
+    course_id: int,
+    db: Session = Depends(get_session),
+    current_user: dict = Depends(get_current_user_from_token),
+):
+    """Lista todas as disciplinas de um curso específico"""
+    course = db.query(Course).filter(Course.id == course_id).first()
+    if not course:
+        raise HTTPException(status_code=404, detail='Curso não encontrado')
+
+    # Retornar disciplinas do curso
+    disciplines = []
+    for discipline in course.curriculum:
+        disciplines.append({
+            'id': discipline.id,
+            'name': discipline.name,
+            'course_ids': [c.id for c in discipline.courses],
+            'prerequisites': [p.id for p in discipline.prerequisites],
+        })
+
+    return disciplines

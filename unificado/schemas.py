@@ -22,14 +22,14 @@ class CoursePublic(BaseModel):
 
 class DisciplineCreate(BaseModel):
     name: str
-    course_id: int
+    course_ids: Optional[List[int]] = []  # Lista de IDs de cursos (N:N)
     prerequisites: Optional[List[int]] = []
 
 
 class DisciplinePublic(BaseModel):
     id: int
     name: str
-    course_id: int
+    course_ids: List[int] = []  # Lista de IDs dos cursos (N:N)
     prerequisites: List[int] = []  # Lista de IDs das disciplinas pré-requisito
 
     class Config:
@@ -37,7 +37,7 @@ class DisciplinePublic(BaseModel):
 
     @model_validator(mode='before')
     @classmethod
-    def extract_prerequisites_ids(cls, values):
+    def extract_related_ids(cls, values):
         if hasattr(values, '__dict__'):
             prerequisites_list = []
             if hasattr(values, 'prerequisites') and values.prerequisites:
@@ -45,10 +45,16 @@ class DisciplinePublic(BaseModel):
                     prereq.id for prereq in values.prerequisites
                 ]
 
+            course_ids_list = []
+            if hasattr(values, 'courses') and values.courses:
+                course_ids_list = [
+                    course.id for course in values.courses
+                ]
+
             return {
                 'id': values.id,
                 'name': values.name,
-                'course_id': values.course_id,
+                'course_ids': course_ids_list,
                 'prerequisites': prerequisites_list,
             }
         return values
