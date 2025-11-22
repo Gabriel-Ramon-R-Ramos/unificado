@@ -28,8 +28,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origin_regex=r'^https://[a-zA-Z0-9-]+\.[a-z]+-[a-z]+-\d+\.awsapprunner\.com/?$',
     allow_origins=[
-        'https://fp4pagmp8f.us-east-1.awsapprunner.com/',
-        'https://unificadofrontend-v8lp.vercel.app/',  # Vercel padrão
+        'https://fp4pagmp8f.us-east-1.awsapprunner.com',
+        'https://unificadofrontend-v8lp.vercel.app',  # Vercel padrão
         'http://localhost:3000',  # React padrão
         'http://localhost:5173',  # Vite padrão
         'http://127.0.0.1:3000',
