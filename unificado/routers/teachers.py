@@ -10,8 +10,8 @@ from unificado.models import (
     User,
 )
 from unificado.schemas import (
-    DisciplinePublic,
     TeacherCreate,
+    TeacherListPublic,
     TeacherPublic,
     TeacherUpdate,
 )
@@ -77,25 +77,13 @@ def create_teacher(
         db.commit()
         db.refresh(teacher_profile)
 
-    return TeacherPublic(
-        id=user.id,
-        username=user.username,
-        email=user.email,
-        employee_number=teacher_profile.employee_number,
-        is_active=user.is_active,
-        disciplines=[
-            DisciplinePublic(
-                id=disc.id,
-                name=disc.name,
-                course_id=disc.course_id,
-                prerequisites=[prereq.id for prereq in disc.prerequisites],
-            )
-            for disc in teacher_profile.disciplines
-        ],
-    )
+    # Retornar a instância `user` e deixar o Pydantic serializar
+    # via `TeacherPublic` (validador transforma o profile em disciplinas)
+    db.refresh(user)
+    return user
 
 
-@router.get('/', response_model=list[TeacherPublic])
+@router.get('/', response_model=list[TeacherListPublic])
 def read_teachers(
     skip: int = 0,
     limit: int = 10,
@@ -136,18 +124,32 @@ def read_teachers(
             status_code=403,
             detail='Estudantes não têm permissão para visualizar professores',
         )
-    return [
-        TeacherPublic(
-            id=teacher.id,
-            username=teacher.username,
-            email=teacher.email,
-            employee_number=teacher.teacher_profile.employee_number
+    result: list[TeacherListPublic] = []
+    for teacher in teachers:
+        emp = (
+            teacher.teacher_profile.employee_number
             if teacher.teacher_profile
-            else None,
-            is_active=teacher.is_active,
+            else None
         )
-        for teacher in teachers
-    ]
+        disciplines_count = (
+            len(teacher.teacher_profile.disciplines)
+            if (
+                teacher.teacher_profile
+                and getattr(teacher.teacher_profile, 'disciplines', None)
+            )
+            else 0
+        )
+        result.append(
+            TeacherListPublic(
+                id=teacher.id,
+                username=teacher.username,
+                email=teacher.email,
+                employee_number=emp,
+                is_active=teacher.is_active,
+                disciplines_count=disciplines_count,
+            )
+        )
+    return result
 
 
 @router.get(

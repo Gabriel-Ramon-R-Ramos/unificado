@@ -15,7 +15,9 @@ from unificado.models import (
     students_disciplines,
 )
 from unificado.schemas import (
+    CoursePublic,
     StudentCreate,
+    StudentListPublic,
     StudentPublic,
     StudentUpdate,
 )
@@ -142,7 +144,7 @@ def create_student(
 
 @router.get(
     '/',
-    response_model=list[StudentPublic],
+    response_model=list[StudentListPublic],
 )
 def read_students(
     skip: int = 0,
@@ -176,7 +178,7 @@ def read_students(
     # Construir uma lista simplificada sem as disciplinas — o detalhamento
     # completo (incluindo disciplinas) fica disponível apenas em
     # GET /students/{id}
-    result: list[dict] = []
+    result: list[StudentListPublic] = []
     for s in students:
         ra = None
         course_data = None
@@ -186,15 +188,23 @@ def read_students(
             if c:
                 course_data = {'id': c.id, 'name': c.name}
 
-        result.append({
-            'id': s.id,
-            'username': s.username,
-            'email': s.email,
-            'is_active': s.is_active,
-            'ra_number': ra,
-            'disciplines': [],
-            'course': course_data,
-        })
+        sp = getattr(s, 'student_profile', None)
+        if sp and getattr(sp, 'disciplines', None):
+            disciplines_count = len(sp.disciplines)
+        else:
+            disciplines_count = 0
+
+        result.append(
+            StudentListPublic(
+                id=s.id,
+                username=s.username,
+                email=s.email,
+                is_active=s.is_active,
+                ra_number=ra,
+                course=CoursePublic(**course_data) if course_data else None,
+                disciplines_count=disciplines_count,
+            )
+        )
 
     return result
 

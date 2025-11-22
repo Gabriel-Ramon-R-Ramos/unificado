@@ -200,6 +200,19 @@ class StudentPublic(BaseModel):
         }
 
 
+class StudentListPublic(BaseModel):
+    id: int
+    username: str
+    email: Optional[EmailStr] = None
+    is_active: bool
+    ra_number: Optional[str] = None
+    course: Optional[CoursePublic] = None
+    disciplines_count: int = 0
+
+    class Config:
+        from_attributes = True
+
+
 # ===== SCHEMAS DE PROFESSORES =====
 
 
@@ -290,6 +303,18 @@ class TeacherPublic(BaseModel):
                 'disciplines': disciplines_list,
             }
         return values
+
+
+class TeacherListPublic(BaseModel):
+    id: int
+    username: str
+    email: Optional[EmailStr] = None
+    is_active: bool
+    employee_number: Optional[str] = None
+    disciplines_count: int = 0
+
+    class Config:
+        from_attributes = True
 
 
 # ===== SCHEMAS DE ADMINISTRADORES =====
