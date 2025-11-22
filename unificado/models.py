@@ -58,6 +58,12 @@ students_disciplines = Table(
         ForeignKey('disciplines.id'),
         primary_key=True,
     ),
+    Column(
+        'status',
+        String(20),
+        nullable=False,
+        default='pendente',
+    ),
 )
 
 # Cursos e Disciplinas (muitos-para-muitos)

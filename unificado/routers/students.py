@@ -502,8 +502,14 @@ def update_discipline_status(
     current_user: dict = Depends(require_role('admin')),
 ):
     """Atualizar status de uma disciplina associada a um estudante.
+
     - Apenas admins podem alterar o status.
     - Professores e alunos apenas podem visualizar via GET.
+
+    Status possíveis (explicação):
+    - `pendente`: disciplina cadastrada para o estudante, ainda não iniciada.
+    - `cursando`: estudante está em andamento na disciplina.
+    - `concluido`: estudante finalizou e concluiu a disciplina.
     """
     # Verificar estudante
     student = (
@@ -515,11 +521,21 @@ def update_discipline_status(
         raise HTTPException(
             status_code=HTTPStatus.NOT_FOUND, detail='Estudante não encontrado'
         )
+    # Verificar se o estudante possui perfil (student_profile)
+    sp = getattr(student, 'student_profile', None)
+    if sp is None:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail='Perfil do estudante não encontrado',
+        )
 
-    # Verificar associação existente
+    sp_id = sp.id
+
+    # Verificar associação existente (student_id em students_disciplines
+    # referencia student_profiles.id)
     row = db.execute(
         sa.select(students_disciplines).where(
-            students_disciplines.c.student_id == student_id,
+            students_disciplines.c.student_id == sp_id,
             students_disciplines.c.discipline_id == discipline_id,
         )
     ).first()
@@ -529,11 +545,12 @@ def update_discipline_status(
             detail='Disciplina não associada ao estudante',
         )
 
-    # Atualizar status
+    # Atualizar status usando student_profile.id
+    # (student_id na tabela de associação refere-se a student_profiles.id)
     db.execute(
         sa.update(students_disciplines)
         .where(
-            students_disciplines.c.student_id == student_id,
+            students_disciplines.c.student_id == sp_id,
             students_disciplines.c.discipline_id == discipline_id,
         )
         .values(status=payload.status)
