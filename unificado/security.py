@@ -13,7 +13,7 @@ ALGORITHM = Settings().ALGORITHM  # type: ignore
 ACCESS_TOKEN_EXPIRE_MINUTES = Settings().ACCESS_TOKEN_EXPIRE_MINUTES  # type: ignore
 
 pwd_context = PasswordHash.recommended()
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl='/api/v1/login')
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl='/api/v1/login/')
 
 
 def get_password_hash(password: str):

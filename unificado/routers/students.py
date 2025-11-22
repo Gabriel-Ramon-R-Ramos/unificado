@@ -1,7 +1,7 @@
 from http import HTTPStatus
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from unificado.database import get_session
 from unificado.models import (
@@ -58,53 +58,63 @@ def create_student(
                 ),
             )
 
-    # Criar o usuário (sempre ativo ao criar)
-    user = User(
-        username=student.username,
-        email=student.email,
-        password_hash=get_password_hash(student.password),
-        role='student',
-    )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-
-    # Criar o perfil do estudante
-    student_profile = StudentProfile(
-        user_id=user.id,
-        ra_number=student.ra_number,
-    )
-    db.add(student_profile)
-    db.commit()
-    db.refresh(student_profile)
-
+    # Criar usuário + perfil + associações em uma transação atômica
+    # Validar IDs de disciplinas solicitados antes de associar
     if student.disciplines:
-        disciplines_id = set(student.disciplines)
-        disciplines = (
-            db.query(Discipline)
-            .filter(Discipline.id.in_(disciplines_id))
-            .all()
+        requested_ids = set(student.disciplines)
+        found = (
+            db.query(Discipline).filter(Discipline.id.in_(requested_ids)).all()
         )
-        student_profile.disciplines.extend(disciplines)
-        db.commit()
-        db.refresh(student_profile)
-
-    return StudentPublic(
-        id=user.id,
-        username=user.username,
-        email=user.email,
-        ra_number=student_profile.ra_number,
-        is_active=user.is_active,
-        disciplines=[
-            DisciplinePublic(
-                id=disc.id,
-                name=disc.name,
-                course_id=disc.course_id,
-                prerequisites=[prereq.id for prereq in disc.prerequisites],
+        found_ids = {d.id for d in found}
+        missing = requested_ids - found_ids
+        if missing:
+            raise HTTPException(
+                status_code=HTTPStatus.BAD_REQUEST,
+                detail={
+                    'msg': 'Algumas disciplinas não foram encontradas',
+                    'missing_ids': list(missing),
+                },
             )
-            for disc in student_profile.disciplines
-        ],
-    )
+
+    # Usar transaction block para garantir atomicidade
+    try:
+        with db.begin():
+            user = User(
+                username=student.username,
+                email=student.email,
+                password_hash=get_password_hash(student.password),
+                role='student',
+            )
+            db.add(user)
+            db.flush()  # assegura que user.id exista
+
+            student_profile = StudentProfile(
+                user_id=user.id,
+                ra_number=student.ra_number,
+                course_id=getattr(student, 'course_id', None),
+            )
+            db.add(student_profile)
+
+            # Associar disciplinas (já validadas acima, se houver)
+            if student.disciplines:
+                disciplines = (
+                    db.query(Discipline)
+                    .filter(Discipline.id.in_(set(student.disciplines)))
+                    .all()
+                )
+                student_profile.disciplines.extend(disciplines)
+
+        # Após commit automático, atualizar instâncias
+        db.refresh(user)
+        if user.student_profile:
+            db.refresh(user.student_profile)
+    except Exception:
+        # Qualquer erro dentro da transação vira 500
+        raise
+
+    # Retornar o objeto User; o Pydantic model `StudentPublic` fará
+    # a extração dos dados relacionados (incluindo disciplinas)
+    return user
 
 
 @router.get(
@@ -122,25 +132,27 @@ def read_students(
     Listar estudantes - PROFESSORES E ADMINS
     show_inactive: apenas admin pode ver usuários inativos
     """
-    query = db.query(User).filter(User.role == 'student')
+    # Eager-loadar perfil e curso para que `StudentPublic` tenha o course disponível
+    query = (
+        db.query(User)
+        .filter(User.role == 'student')
+        .options(
+            selectinload(User.student_profile).selectinload(
+                StudentProfile.course
+            )
+        )
+    )
 
     # Filtrar por status ativo
     if not show_inactive or current_user['role'] != 'admin':
         query = query.filter(User.is_active)
 
     students = query.offset(skip).limit(limit).all()
-    return [
-        StudentPublic(
-            id=student.id,
-            username=student.username,
-            email=student.email,
-            ra_number=student.student_profile.ra_number
-            if student.student_profile
-            else None,
-            is_active=student.is_active,
-        )
-        for student in students
-    ]
+    # Retornar instâncias do modelo SQLAlchemy diretamente para que o
+    # Pydantic `StudentPublic` (com `from_attributes=True`) faça a extração
+    # e validação — isso evita problemas com construção manual que acarreta
+    # validação rígida de `EmailStr` quando e-mails de seed podem ser inválidos.
+    return students
 
 
 @router.get(
@@ -174,8 +186,14 @@ def read_student(
         )
 
     # Buscar estudante
-    query = db.query(User).filter(
-        User.id == student_id, User.role == 'student'
+    query = (
+        db.query(User)
+        .filter(User.id == student_id, User.role == 'student')
+        .options(
+            selectinload(User.student_profile).selectinload(
+                StudentProfile.course
+            )
+        )
     )
 
     # Apenas admin pode ver usuários inativos
@@ -311,8 +329,8 @@ def add_disciplines(
             detail='Perfil do estudante não encontrado',
         )
 
-    # Verificar se a disciplina já está associada
-    if discipline in student.student_profile.disciplines:
+    # Verificar se a disciplina já está associada (comparar por id para ser robusto)
+    if any(d.id == discipline.id for d in student.student_profile.disciplines):
         raise HTTPException(
             status_code=HTTPStatus.BAD_REQUEST,
             detail='Esta disciplina já está associada ao estudante',
@@ -372,8 +390,10 @@ def remove_discipline(
             detail='Perfil do estudante não encontrado',
         )
 
-    # Verificar se a disciplina está associada
-    if discipline not in student.student_profile.disciplines:
+    # Verificar se a disciplina está associada (comparar por id)
+    if not any(
+        d.id == discipline.id for d in student.student_profile.disciplines
+    ):
         raise HTTPException(
             status_code=HTTPStatus.BAD_REQUEST,
             detail='Esta disciplina não está associada ao estudante',

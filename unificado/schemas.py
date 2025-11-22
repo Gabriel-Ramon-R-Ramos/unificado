@@ -47,9 +47,7 @@ class DisciplinePublic(BaseModel):
 
             course_ids_list = []
             if hasattr(values, 'courses') and values.courses:
-                course_ids_list = [
-                    course.id for course in values.courses
-                ]
+                course_ids_list = [course.id for course in values.courses]
 
             return {
                 'id': values.id,
@@ -79,6 +77,9 @@ class StudentCreate(BaseModel):
     password: str
     ra_number: Optional[str] = None
     disciplines: Optional[list[int]] = None  # IDs das disciplinas
+    course_id: Optional[int] = (
+        None  # ID do curso (opcional) para atribuir grade/currículo
+    )
 
 
 class StudentUpdate(BaseModel):
@@ -113,6 +114,7 @@ class StudentPublic(BaseModel):
     is_active: bool
     ra_number: Optional[str] = None
     disciplines: List[DisciplinePublic] = []
+    course: Optional[CoursePublic] = None
 
     class Config:
         from_attributes = True
@@ -129,7 +131,9 @@ class StudentPublic(BaseModel):
                         {
                             'id': disc.id,
                             'name': disc.name,
-                            'course_id': disc.course_id,
+                            'course_ids': [c.id for c in disc.courses]
+                            if getattr(disc, 'courses', None)
+                            else [],
                             'prerequisites': (
                                 [p.id for p in disc.prerequisites]
                                 if disc.prerequisites
@@ -139,16 +143,27 @@ class StudentPublic(BaseModel):
                         for disc in values.student_profile.disciplines
                     ]
 
-            return {
-                'id': values.id,
-                'username': values.username,
-                'email': values.email,
-                'is_active': values.is_active,
-                'ra_number': values.student_profile.ra_number
-                if values.student_profile
-                else None,
-                'disciplines': disciplines_list,
-            }
+                # Extrair curso do perfil do estudante (se existir)
+                course_data = None
+                if (
+                    hasattr(values, 'student_profile')
+                    and values.student_profile
+                ):
+                    if getattr(values.student_profile, 'course', None):
+                        c = values.student_profile.course
+                        course_data = {'id': c.id, 'name': c.name}
+
+                return {
+                    'id': values.id,
+                    'username': values.username,
+                    'email': values.email,
+                    'is_active': values.is_active,
+                    'ra_number': values.student_profile.ra_number
+                    if values.student_profile
+                    else None,
+                    'disciplines': disciplines_list,
+                    'course': course_data,
+                }
         return values
 
 
@@ -222,7 +237,9 @@ class TeacherPublic(BaseModel):
                         {
                             'id': disc.id,
                             'name': disc.name,
-                            'course_id': disc.course_id,
+                            'course_ids': [c.id for c in disc.courses]
+                            if getattr(disc, 'courses', None)
+                            else [],
                             'prerequisites': (
                                 [p.id for p in disc.prerequisites]
                                 if disc.prerequisites

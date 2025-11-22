@@ -193,6 +193,10 @@ class StudentProfile:
     user_id: Mapped[int] = mapped_column(
         ForeignKey('users.id'), nullable=False, unique=True, index=True
     )
+    # Opcional: curso associado ao estudante (grade/currículo)
+    course_id: Mapped[Optional[int]] = mapped_column(
+        ForeignKey('courses.id'), nullable=True
+    )
     # Número de matrícula do aluno (opcional)
     ra_number: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
 
@@ -201,6 +205,11 @@ class StudentProfile:
         back_populates='student_profile',
         init=False,
         passive_deletes=True,
+    )
+
+    # Relacionamento com Course (opcional)
+    course: Mapped[Optional['Course']] = relationship(
+        'Course', init=False, default=None
     )
 
     # Disciplinas cursadas
