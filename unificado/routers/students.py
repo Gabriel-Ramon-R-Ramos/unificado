@@ -5,12 +5,12 @@ from sqlalchemy.orm import Session, selectinload
 
 from unificado.database import get_session
 from unificado.models import (
+    Course,
     Discipline,
     StudentProfile,
     User,
 )
 from unificado.schemas import (
-    DisciplinePublic,
     StudentCreate,
     StudentPublic,
     StudentUpdate,
@@ -60,6 +60,7 @@ def create_student(
 
     # Criar usuário + perfil + associações em uma transação atômica
     # Validar IDs de disciplinas solicitados antes de associar
+    requested_ids: set[int] = set()
     if student.disciplines:
         requested_ids = set(student.disciplines)
         found = (
@@ -75,6 +76,24 @@ def create_student(
                     'missing_ids': list(missing),
                 },
             )
+    # Preparar IDs de disciplinas a serem associadas
+    # (união de explicitadas + do curso)
+    disciplines_to_assign_ids: set[int] = set()
+    if student.disciplines:
+        disciplines_to_assign_ids |= requested_ids
+
+    course = None
+    if getattr(student, 'course_id', None):
+        course = (
+            db.query(Course).filter(Course.id == student.course_id).first()
+        )
+        if not course:
+            raise HTTPException(
+                status_code=HTTPStatus.NOT_FOUND,
+                detail='Curso não encontrado',
+            )
+        if getattr(course, 'curriculum', None):
+            disciplines_to_assign_ids |= {d.id for d in course.curriculum}
 
     # Usar transaction block para garantir atomicidade
     try:
@@ -95,11 +114,11 @@ def create_student(
             )
             db.add(student_profile)
 
-            # Associar disciplinas (já validadas acima, se houver)
-            if student.disciplines:
+            # Buscar e associar disciplinas (todos de uma vez)
+            if disciplines_to_assign_ids:
                 disciplines = (
                     db.query(Discipline)
-                    .filter(Discipline.id.in_(set(student.disciplines)))
+                    .filter(Discipline.id.in_(disciplines_to_assign_ids))
                     .all()
                 )
                 student_profile.disciplines.extend(disciplines)
@@ -132,7 +151,8 @@ def read_students(
     Listar estudantes - PROFESSORES E ADMINS
     show_inactive: apenas admin pode ver usuários inativos
     """
-    # Eager-loadar perfil e curso para que `StudentPublic` tenha o course disponível
+    # Eager-loadar perfil e curso para que `StudentPublic`
+    # tenha o course disponível
     query = (
         db.query(User)
         .filter(User.role == 'student')
@@ -151,7 +171,8 @@ def read_students(
     # Retornar instâncias do modelo SQLAlchemy diretamente para que o
     # Pydantic `StudentPublic` (com `from_attributes=True`) faça a extração
     # e validação — isso evita problemas com construção manual que acarreta
-    # validação rígida de `EmailStr` quando e-mails de seed podem ser inválidos.
+    # validação rígida de `EmailStr` quando e-mails de seed
+    # podem ser inválidos.
     return students
 
 
@@ -278,6 +299,30 @@ def update_student(
     if student.ra_number is not None and user.student_profile:
         user.student_profile.ra_number = student.ra_number
 
+    # Atualizar curso do estudante (se fornecido)
+    if (
+        getattr(student, 'course_id', None) is not None
+        and user.student_profile
+    ):
+        # Validar existência do curso antes de atualizar
+        # e adicionar disciplinas
+        new_course_id = student.course_id
+        course = db.query(Course).filter(Course.id == new_course_id).first()
+        if not course:
+            raise HTTPException(
+                status_code=HTTPStatus.NOT_FOUND,
+                detail='Curso não encontrado',
+            )
+        # Atualizar course_id e adicionar disciplinas do curso
+        # (sem remover as existentes)
+        user.student_profile.course_id = new_course_id
+        db.flush()
+        if getattr(course, 'curriculum', None):
+            existing_ids = {d.id for d in user.student_profile.disciplines}
+            for disc in course.curriculum:
+                if disc.id not in existing_ids:
+                    user.student_profile.disciplines.append(disc)
+
     db.commit()
     db.refresh(user)
 
@@ -329,7 +374,8 @@ def add_disciplines(
             detail='Perfil do estudante não encontrado',
         )
 
-    # Verificar se a disciplina já está associada (comparar por id para ser robusto)
+    # Verificar se a disciplina já está associada
+    # (comparar por id para ser robusto)
     if any(d.id == discipline.id for d in student.student_profile.disciplines):
         raise HTTPException(
             status_code=HTTPStatus.BAD_REQUEST,

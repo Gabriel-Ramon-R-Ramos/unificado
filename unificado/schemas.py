@@ -94,6 +94,7 @@ class StudentUpdate(BaseModel):
     username: Optional[str] = None
     email: Optional[EmailStr] = None
     ra_number: Optional[str] = None
+    course_id: Optional[int] = None
 
 
 class StudentPublic(BaseModel):

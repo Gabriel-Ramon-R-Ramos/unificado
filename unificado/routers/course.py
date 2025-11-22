@@ -107,19 +107,26 @@ def add_discipline_to_course(
     if not course:
         raise HTTPException(status_code=404, detail='Curso não encontrado')
 
-    discipline = db.query(Discipline).filter(Discipline.id == discipline_id).first()
+    discipline = (
+        db.query(Discipline).filter(Discipline.id == discipline_id).first()
+    )
     if not discipline:
-        raise HTTPException(status_code=404, detail='Disciplina não encontrada')
+        raise HTTPException(
+            status_code=404, detail='Disciplina não encontrada'
+        )
 
     # Verificar se já está associada (comparar por id)
     if any(d.id == discipline.id for d in course.curriculum):
-        raise HTTPException(status_code=400, detail='Disciplina já associada ao curso')
+        raise HTTPException(
+            status_code=400, detail='Disciplina já associada ao curso'
+        )
 
     course.curriculum.append(discipline)
     db.commit()
     db.refresh(course)
 
-    # Retornar a lista de disciplinas atualizada (mesmo formato de read_course_disciplines)
+    # Retornar a lista de disciplinas atualizada
+    # (mesmo formato de read_course_disciplines)
     result = []
     for disc in course.curriculum:
         result.append({
@@ -147,13 +154,19 @@ def remove_discipline_from_course(
     if not course:
         raise HTTPException(status_code=404, detail='Curso não encontrado')
 
-    discipline = db.query(Discipline).filter(Discipline.id == discipline_id).first()
+    discipline = (
+        db.query(Discipline).filter(Discipline.id == discipline_id).first()
+    )
     if not discipline:
-        raise HTTPException(status_code=404, detail='Disciplina não encontrada')
+        raise HTTPException(
+            status_code=404, detail='Disciplina não encontrada'
+        )
 
     # Verificar se está associada
     if not any(d.id == discipline.id for d in course.curriculum):
-        raise HTTPException(status_code=400, detail='Disciplina não está associada ao curso')
+        raise HTTPException(
+            status_code=400, detail='Disciplina não está associada ao curso'
+        )
 
     course.curriculum.remove(discipline)
     db.commit()
