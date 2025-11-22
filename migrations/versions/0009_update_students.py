@@ -18,6 +18,32 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+# Configurável: lista de tuplas (username, discipline_name, desired_status)
+# Edite esta lista para aplicar mais mudanças de status sem alterar a lógica abaixo.
+STATUS_UPDATES: Sequence[tuple[str, str, str]] = [
+    ("aluno.joao", "Algoritmos e Programação", "concluido"),
+    ("aluno.joao", "Estrutura de Dados - Desafios de Programação", "concluido"),
+    ("aluno.joao", "Grafos: Teoria e Programação", "concluido"),
+    ("aluno.joao", "Introdução aos Compiladores", "concluido"),
+    ("aluno.joao", "Programação para Internet", "concluido"),
+    ("aluno.joao", "Bancos de Dados Relacionais", "concluido"),
+    ("aluno.joao", "Banco de Dados NoSQL", "concluido"),
+    ("aluno.joao", "Cálculo Diferencial e Integral 1", "concluido"),
+    ("aluno.joao", "Cálculo Diferencial e Integral 2", "concluido"),
+    ("aluno.joao", "Álgebra Linear", "concluido"),
+    ("aluno.joao", "Física do Movimento", "concluido"),
+    ("aluno.joao", "Fenômenos Eletromagnéticos", "concluido"),
+    ("aluno.joao", "Aplicações de Eletricidade", "concluido"),
+    ("aluno.joao", "Sistemas Operacionais", "concluido"),
+    ("aluno.joao", "Redes de Computadores", "concluido"),
+    ("aluno.joao", "Programação Distribuída e Paralela / Computação em Nuvem", "concluido"),
+    ("aluno.joao", "Engenharia de Software - Desenvolvimento Colaborativo Ágil", "concluido"),
+    ("aluno.joao", "Gerenciamento de Projetos de Engenharia", "concluido"),
+    ("aluno.joao", "Projeto Integrador: Projetos e Software", "concluido"),
+    ("aluno.joao", "Projeto Integrador: Desafios de Programação", "concluido"),
+]
+
+
 def _ensure_students_disciplines_entry(bind, sid, did, status_val: str):
     existing = bind.execute(
         sa.text(
@@ -39,6 +65,23 @@ def _ensure_students_disciplines_entry(bind, sid, did, status_val: str):
                 "INSERT INTO students_disciplines (student_id, discipline_id, status) VALUES (:sid, :did, :status)"
             ),
             {"sid": sid, "did": did, "status": status_val},
+        )
+
+
+def _ensure_students_disciplines_present(bind, sid, did, status_default: str = 'pendente'):
+    """Ensure an entry exists for student-discipline; do not overwrite existing status."""
+    exists = bind.execute(
+        sa.text(
+            "SELECT 1 FROM students_disciplines WHERE student_id = :sid AND discipline_id = :did LIMIT 1"
+        ),
+        {"sid": sid, "did": did},
+    ).first()
+    if not exists:
+        bind.execute(
+            sa.text(
+                "INSERT INTO students_disciplines (student_id, discipline_id, status) VALUES (:sid, :did, :status)"
+            ),
+            {"sid": sid, "did": did, "status": status_default},
         )
 
 
@@ -64,14 +107,20 @@ def upgrade() -> None:
         # Atualizar course_id do profile
         bind.execute(sa.text("UPDATE student_profiles SET course_id = :cid WHERE id = :spid"), {"cid": course_id, "spid": sp_id})
 
-    # Ajustar status de disciplinas considerando pré-requisitos
-    # Definir ações desejadas (username, discipline_name, desired_status)
-    actions = [
-        ("aluno.joao", "Algoritmos e Programação", 'concluido'),
-        ("aluna.maria", "Estrutura de Dados - Desafios de Programação", 'cursando'),
-    ]
+        # Adicionar todas as disciplinas do currículo do curso ao estudante (sem sobrescrever status existente)
+        curriculum = bind.execute(
+            sa.text("SELECT discipline_id FROM course_disciplines WHERE course_id = :cid"), {"cid": course_id}
+        ).fetchall()
+        for row in curriculum:
+            try:
+                did = row[0]
+            except Exception:
+                continue
+            _ensure_students_disciplines_present(bind, sp_id, did, 'pendente')
 
-    for username, dname, desired_status in actions:
+    # Ajustar status de disciplinas considerando pré-requisitos
+    # Definir ações via `STATUS_UPDATES` (configurável no topo do arquivo)
+    for username, dname, desired_status in STATUS_UPDATES:
         user_row = bind.execute(sa.text("SELECT id FROM users WHERE username = :u LIMIT 1"), {"u": username}).first()
         if not user_row:
             continue
