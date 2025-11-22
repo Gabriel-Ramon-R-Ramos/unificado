@@ -1,6 +1,10 @@
 from typing import List, Literal, Optional
 
+import sqlalchemy as sa
 from pydantic import BaseModel, EmailStr, model_validator
+from sqlalchemy.orm import object_session
+
+from unificado.models import students_disciplines
 
 # ===== SCHEMAS DE CURSOS =====
 
@@ -31,6 +35,9 @@ class DisciplinePublic(BaseModel):
     name: str
     course_ids: List[int] = []  # Lista de IDs dos cursos (N:N)
     prerequisites: List[int] = []  # Lista de IDs das disciplinas pré-requisito
+    status: Optional[str] = (
+        None  # status por estudante quando aplicado (ex: 'pendente')
+    )
 
     class Config:
         from_attributes = True
@@ -123,49 +130,74 @@ class StudentPublic(BaseModel):
     @model_validator(mode='before')
     @classmethod
     def extract_student_data(cls, values):
-        if hasattr(values, '__dict__'):
-            # Extrair disciplinas do relacionamento M:N
-            disciplines_list = []
-            if hasattr(values, 'student_profile') and values.student_profile:
-                if hasattr(values.student_profile, 'disciplines'):
-                    disciplines_list = [
-                        {
-                            'id': disc.id,
-                            'name': disc.name,
-                            'course_ids': [c.id for c in disc.courses]
-                            if getattr(disc, 'courses', None)
-                            else [],
-                            'prerequisites': (
-                                [p.id for p in disc.prerequisites]
-                                if disc.prerequisites
-                                else []
-                            ),
-                        }
-                        for disc in values.student_profile.disciplines
-                    ]
+        # Saídas rápidas para reduzir níveis de aninhamento
+        if not hasattr(values, '__dict__'):
+            return values
 
-                # Extrair curso do perfil do estudante (se existir)
-                course_data = None
+        profile = getattr(values, 'student_profile', None)
+        # Se não houver profile, devolver o mínimo sem disciplinas
+        if not profile:
+            return {
+                'id': values.id,
+                'username': values.username,
+                'email': values.email,
+                'is_active': values.is_active,
+                'ra_number': None,
+                'disciplines': [],
+                'course': None,
+            }
+
+        disciplines_list: list[dict] = []
+        session = object_session(values)
+
+        if getattr(profile, 'disciplines', None):
+            for disc in profile.disciplines:
+                status = 'pendente'
                 if (
-                    hasattr(values, 'student_profile')
-                    and values.student_profile
+                    session is not None
+                    and getattr(profile, 'id', None) is not None
                 ):
-                    if getattr(values.student_profile, 'course', None):
-                        c = values.student_profile.course
-                        course_data = {'id': c.id, 'name': c.name}
+                    try:
+                        row = session.execute(
+                            sa.select(students_disciplines.c.status).where(
+                                students_disciplines.c.student_id
+                                == profile.id,
+                                students_disciplines.c.discipline_id
+                                == disc.id,
+                            )
+                        ).first()
+                        if row and row[0] is not None:
+                            status = row[0]
+                    except Exception:
+                        # fallback para pendente
+                        pass
 
-                return {
-                    'id': values.id,
-                    'username': values.username,
-                    'email': values.email,
-                    'is_active': values.is_active,
-                    'ra_number': values.student_profile.ra_number
-                    if values.student_profile
-                    else None,
-                    'disciplines': disciplines_list,
-                    'course': course_data,
-                }
-        return values
+                disciplines_list.append({
+                    'id': disc.id,
+                    'name': disc.name,
+                    'course_ids': [c.id for c in disc.courses]
+                    if getattr(disc, 'courses', None)
+                    else [],
+                    'prerequisites': [p.id for p in disc.prerequisites]
+                    if disc.prerequisites
+                    else [],
+                    'status': status,
+                })
+
+        course = getattr(profile, 'course', None)
+        course_data = (
+            {'id': course.id, 'name': course.name} if course else None
+        )
+
+        return {
+            'id': values.id,
+            'username': values.username,
+            'email': values.email,
+            'is_active': values.is_active,
+            'ra_number': profile.ra_number if profile else None,
+            'disciplines': disciplines_list,
+            'course': course_data,
+        }
 
 
 # ===== SCHEMAS DE PROFESSORES =====
@@ -230,7 +262,6 @@ class TeacherPublic(BaseModel):
     @classmethod
     def extract_teacher_data(cls, values):
         if hasattr(values, '__dict__'):
-            # Extrair disciplinas do relacionamento M:N
             disciplines_list = []
             if hasattr(values, 'teacher_profile') and values.teacher_profile:
                 if hasattr(values.teacher_profile, 'disciplines'):
@@ -241,11 +272,9 @@ class TeacherPublic(BaseModel):
                             'course_ids': [c.id for c in disc.courses]
                             if getattr(disc, 'courses', None)
                             else [],
-                            'prerequisites': (
-                                [p.id for p in disc.prerequisites]
-                                if disc.prerequisites
-                                else []
-                            ),
+                            'prerequisites': [p.id for p in disc.prerequisites]
+                            if disc.prerequisites
+                            else [],
                         }
                         for disc in values.teacher_profile.disciplines
                     ]

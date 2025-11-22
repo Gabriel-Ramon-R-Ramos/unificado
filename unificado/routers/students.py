@@ -1,6 +1,9 @@
 from http import HTTPStatus
+from typing import Literal
 
+import sqlalchemy as sa
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy.orm import Session, selectinload
 
 from unificado.database import get_session
@@ -9,6 +12,7 @@ from unificado.models import (
     Discipline,
     StudentProfile,
     User,
+    students_disciplines,
 )
 from unificado.schemas import (
     StudentCreate,
@@ -466,6 +470,64 @@ def remove_discipline(
 
     # Remover a disciplina
     student.student_profile.disciplines.remove(discipline)
+    db.commit()
+    db.refresh(student)
+
+    return student
+
+
+class DisciplineStatusUpdate(BaseModel):
+    status: Literal['pendente', 'cursando', 'concluido']
+
+
+@router.patch(
+    '/{student_id}/disciplines/{discipline_id}/status',
+    response_model=StudentPublic,
+)
+def update_discipline_status(
+    student_id: int,
+    discipline_id: int,
+    payload: DisciplineStatusUpdate,
+    db: Session = Depends(get_session),
+    current_user: dict = Depends(require_role('admin')),
+):
+    """Atualizar status de uma disciplina associada a um estudante.
+    - Apenas admins podem alterar o status.
+    - Professores e alunos apenas podem visualizar via GET.
+    """
+    # Verificar estudante
+    student = (
+        db.query(User)
+        .filter(User.id == student_id, User.role == 'student')
+        .first()
+    )
+    if not student:
+        raise HTTPException(
+            status_code=HTTPStatus.NOT_FOUND, detail='Estudante não encontrado'
+        )
+
+    # Verificar associação existente
+    row = db.execute(
+        sa.select(students_disciplines).where(
+            students_disciplines.c.student_id == student_id,
+            students_disciplines.c.discipline_id == discipline_id,
+        )
+    ).first()
+    if not row:
+        raise HTTPException(
+            status_code=HTTPStatus.NOT_FOUND,
+            detail='Disciplina não associada ao estudante',
+        )
+
+    # Atualizar status
+    db.execute(
+        sa.update(students_disciplines)
+        .where(
+            students_disciplines.c.student_id == student_id,
+            students_disciplines.c.discipline_id == discipline_id,
+        )
+        .values(status=payload.status)
+    )
     db.commit()
     db.refresh(student)
 

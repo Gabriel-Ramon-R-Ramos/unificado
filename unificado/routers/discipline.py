@@ -39,7 +39,7 @@ def create_discipline(
             if not course:
                 raise HTTPException(
                     status_code=HTTPStatus.NOT_FOUND,
-                    detail=f'Curso com ID {course_id} não encontrado'
+                    detail=f'Curso com ID {course_id} não encontrado',
                 )
             courses.append(course)
 
@@ -193,15 +193,12 @@ def add_discipline_to_course(
     # Buscar o curso
     course = db.query(Course).filter(Course.id == course_id).first()
     if not course:
-        raise HTTPException(
-            status_code=404, detail='Curso não encontrado'
-        )
+        raise HTTPException(status_code=404, detail='Curso não encontrado')
 
     # Verificar se a associação já existe
     if course in discipline.courses:
         raise HTTPException(
-            status_code=400,
-            detail='Disciplina já está associada a este curso'
+            status_code=400, detail='Disciplina já está associada a este curso'
         )
 
     # Adicionar a associação
@@ -235,15 +232,13 @@ def remove_discipline_from_course(
     # Buscar o curso
     course = db.query(Course).filter(Course.id == course_id).first()
     if not course:
-        raise HTTPException(
-            status_code=404, detail='Curso não encontrado'
-        )
+        raise HTTPException(status_code=404, detail='Curso não encontrado')
 
     # Verificar se a associação existe
     if course not in discipline.courses:
         raise HTTPException(
             status_code=400,
-            detail='Disciplina não está associada a este curso'
+            detail='Disciplina não está associada a este curso',
         )
 
     # Remover a associação
