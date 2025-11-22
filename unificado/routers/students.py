@@ -168,12 +168,31 @@ def read_students(
         query = query.filter(User.is_active)
 
     students = query.offset(skip).limit(limit).all()
-    # Retornar instâncias do modelo SQLAlchemy diretamente para que o
-    # Pydantic `StudentPublic` (com `from_attributes=True`) faça a extração
-    # e validação — isso evita problemas com construção manual que acarreta
-    # validação rígida de `EmailStr` quando e-mails de seed
-    # podem ser inválidos.
-    return students
+
+    # Construir uma lista simplificada sem as disciplinas — o detalhamento
+    # completo (incluindo disciplinas) fica disponível apenas em
+    # GET /students/{id}
+    result: list[dict] = []
+    for s in students:
+        ra = None
+        course_data = None
+        if getattr(s, 'student_profile', None):
+            ra = getattr(s.student_profile, 'ra_number', None)
+            c = getattr(s.student_profile, 'course', None)
+            if c:
+                course_data = {'id': c.id, 'name': c.name}
+
+        result.append({
+            'id': s.id,
+            'username': s.username,
+            'email': s.email,
+            'is_active': s.is_active,
+            'ra_number': ra,
+            'disciplines': [],
+            'course': course_data,
+        })
+
+    return result
 
 
 @router.get(
