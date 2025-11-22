@@ -71,7 +71,7 @@ def upgrade() -> None:
         return ''
 
     admin_password = _read_env_var('ADMIN_PASSWORD')
-    admin_email = _read_env_var('ADMIN_EMAIL') or os.environ.get('ADMIN_EMAIL', 'admin@local')
+    admin_email = _read_env_var('ADMIN_EMAIL') or os.environ.get('ADMIN_EMAIL', 'admin@local.com')
 
     # do insertion only if password provided and user doesn't exist
     bind = op.get_bind()
