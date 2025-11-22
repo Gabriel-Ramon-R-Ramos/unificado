@@ -179,3 +179,4 @@ pyrightconfig.json
 
 *.db
 IDEIA_APLICACAO_GRAFOS.md
+graph_demo.py

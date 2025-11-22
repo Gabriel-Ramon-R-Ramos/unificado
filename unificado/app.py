@@ -5,6 +5,7 @@ from unificado.routers import (
     auth,
     course,
     discipline,
+    insights,
     students,
     system,
     teachers,
@@ -46,6 +47,7 @@ app.include_router(course.router)
 app.include_router(discipline.router)
 app.include_router(students.router)
 app.include_router(teachers.router)
+app.include_router(insights.router)
 
 
 @app.get('/')
