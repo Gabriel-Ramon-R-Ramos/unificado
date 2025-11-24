@@ -83,10 +83,10 @@ class StudentCreate(BaseModel):
     email: Optional[EmailStr] = None
     password: str
     ra_number: Optional[str] = None
-    disciplines: Optional[list[int]] = None  # IDs das disciplinas
-    course_id: Optional[int] = (
-        None  # ID do curso (opcional) para atribuir grade/currículo
+    assign_course_curriculum: bool = (
+        True  # Atribuir currículo do curso automaticamente
     )
+    course_id: Optional[int] = None  # ID do curso (opcional)
 
 
 class StudentUpdate(BaseModel):

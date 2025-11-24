@@ -63,31 +63,7 @@ def create_student(
                     'Entre em contato com o administrador para reativação.'
                 ),
             )
-
-    # Criar usuário + perfil + associações em uma transação atômica
-    # Validar IDs de disciplinas solicitados antes de associar
-    requested_ids: set[int] = set()
-    if student.disciplines:
-        requested_ids = set(student.disciplines)
-        found = (
-            db.query(Discipline).filter(Discipline.id.in_(requested_ids)).all()
-        )
-        found_ids = {d.id for d in found}
-        missing = requested_ids - found_ids
-        if missing:
-            raise HTTPException(
-                status_code=HTTPStatus.BAD_REQUEST,
-                detail={
-                    'msg': 'Algumas disciplinas não foram encontradas',
-                    'missing_ids': list(missing),
-                },
-            )
-    # Preparar IDs de disciplinas a serem associadas
-    # (união de explicitadas + do curso)
-    disciplines_to_assign_ids: set[int] = set()
-    if student.disciplines:
-        disciplines_to_assign_ids |= requested_ids
-
+    # Verificar existência do curso (se fornecido)
     course = None
     if getattr(student, 'course_id', None):
         course = (
@@ -98,44 +74,40 @@ def create_student(
                 status_code=HTTPStatus.NOT_FOUND,
                 detail='Curso não encontrado',
             )
-        if getattr(course, 'curriculum', None):
-            disciplines_to_assign_ids |= {d.id for d in course.curriculum}
 
-    # Usar transaction block para garantir atomicidade
-    try:
-        with db.begin():
-            user = User(
-                username=student.username,
-                email=student.email,
-                password_hash=get_password_hash(student.password),
-                role='student',
-            )
-            db.add(user)
-            db.flush()  # assegura que user.id exista
+    user = User(
+        username=student.username,
+        email=student.email,
+        password_hash=get_password_hash(student.password),
+        role='student',
+    )
+    db.add(user)
+    db.flush()  # assegura que user.id exista
 
-            student_profile = StudentProfile(
-                user_id=user.id,
-                ra_number=student.ra_number,
-                course_id=getattr(student, 'course_id', None),
-            )
-            db.add(student_profile)
+    student_profile = StudentProfile(
+        user_id=user.id,
+        ra_number=student.ra_number,
+        course_id=getattr(student, 'course_id', None),
+    )
+    db.add(student_profile)
 
-            # Buscar e associar disciplinas (todos de uma vez)
-            if disciplines_to_assign_ids:
-                disciplines = (
-                    db.query(Discipline)
-                    .filter(Discipline.id.in_(disciplines_to_assign_ids))
-                    .all()
-                )
-                student_profile.disciplines.extend(disciplines)
+    # Se solicitado, atribuir automaticamente o currículo do curso
+    if (
+        getattr(student, 'assign_course_curriculum', True)
+        and course
+        and getattr(course, 'curriculum', None)
+    ):
+        # adicionar disciplinas do currículo sem duplicar
+        existing_ids = {d.id for d in student_profile.disciplines}
+        for disc in course.curriculum:
+            if disc.id not in existing_ids:
+                student_profile.disciplines.append(disc)
 
-        # Após commit automático, atualizar instâncias
-        db.refresh(user)
-        if user.student_profile:
-            db.refresh(user.student_profile)
-    except Exception:
-        # Qualquer erro dentro da transação vira 500
-        raise
+    # A confirmação/rollback da transação será feita pelo gerenciador
+    # de contexto em `get_session` quando a dependência for finalizada.
+    db.refresh(user)
+    if user.student_profile:
+        db.refresh(user.student_profile)
 
     # Retornar o objeto User; o Pydantic model `StudentPublic` fará
     # a extração dos dados relacionados (incluindo disciplinas)
