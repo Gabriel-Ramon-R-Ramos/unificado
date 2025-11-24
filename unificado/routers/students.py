@@ -1,9 +1,8 @@
 from http import HTTPStatus
-from typing import Literal
+from typing import cast
 
 import sqlalchemy as sa
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
 from sqlalchemy.orm import Session, selectinload
 
 from unificado.database import get_session
@@ -15,7 +14,10 @@ from unificado.models import (
     students_disciplines,
 )
 from unificado.schemas import (
+    BatchDisciplineRequest,
+    BatchDisciplineResponse,
     CoursePublic,
+    DisciplineStatusUpdate,
     StudentCreate,
     StudentListPublic,
     StudentPublic,
@@ -337,6 +339,7 @@ def update_student(
 @router.patch(
     '/{student_id}/disciplines/{discipline_id}',
     response_model=StudentPublic,
+    summary='Adicionar disciplina ao estudante',
 )
 def add_disciplines(
     student_id: int,
@@ -393,6 +396,153 @@ def add_disciplines(
     db.refresh(student)
 
     return student
+
+
+@router.post(
+    '/{student_id}/disciplines',
+    response_model=BatchDisciplineResponse,
+    summary='Adicionar múltiplas disciplinas ao estudante',
+)
+def add_disciplines_batch(
+    student_id: int,
+    payload: BatchDisciplineRequest,
+    db: Session = Depends(get_session),
+    current_user: dict = Depends(require_role('admin')),
+):
+    """Associar várias disciplinas a um estudante - APENAS ADMIN
+
+    - Se alguma disciplina não existir, ela é isolada (reportada em
+      `not_found`) e as demais são processadas.
+    - Disciplinas já associadas são ignoradas e listadas em `skipped`.
+    """
+    ids = list(dict.fromkeys(payload.discipline_ids))
+    if not ids:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail='Nenhuma disciplina informada',
+        )
+
+    # Buscar disciplinas existentes
+    found = db.query(Discipline).filter(Discipline.id.in_(ids)).all()
+    found_ids = {d.id for d in found}
+    not_found = [i for i in ids if i not in found_ids]
+
+    # Buscar estudante e validar
+    student = (
+        db.query(User)
+        .filter(
+            User.id == student_id,
+            User.role == 'student',
+            User.is_active.is_(True),
+        )
+        .first()
+    )
+    if not student:
+        raise HTTPException(
+            status_code=HTTPStatus.NOT_FOUND,
+            detail='Estudante ativo não encontrado',
+        )
+
+    if not student.student_profile:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail='Perfil do estudante não encontrado',
+        )
+
+    existing_ids = {d.id for d in student.student_profile.disciplines}
+    skipped: list[int] = []
+    to_add = []
+    for d in found:
+        if d.id in existing_ids:
+            skipped.append(d.id)
+        else:
+            to_add.append(d)
+
+    for d in to_add:
+        student.student_profile.disciplines.append(d)
+
+    db.commit()
+    db.refresh(student)
+
+    return BatchDisciplineResponse(
+        student=cast(StudentPublic, student),
+        not_found=not_found,
+        skipped=skipped,
+    )
+
+
+@router.delete(
+    '/{student_id}/disciplines',
+    response_model=BatchDisciplineResponse,
+    summary='Remover múltiplas disciplinas do estudante',
+)
+def remove_disciplines_batch(
+    student_id: int,
+    payload: BatchDisciplineRequest,
+    db: Session = Depends(get_session),
+    current_user: dict = Depends(require_role('admin')),
+):
+    """Remover várias disciplinas de um estudante - APENAS ADMIN
+
+    - Se alguma disciplina não existir, ela é isolada (reportada em
+      `not_found`) e as demais são processadas.
+    - Disciplinas que não estiverem associadas são ignoradas e listadas
+      em `skipped`.
+    """
+    ids = list(dict.fromkeys(payload.discipline_ids))
+    if not ids:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail='Nenhuma disciplina informada',
+        )
+
+    # Buscar disciplinas existentes
+    found = db.query(Discipline).filter(Discipline.id.in_(ids)).all()
+    found_map = {d.id: d for d in found}
+    found_ids = set(found_map.keys())
+    not_found = [i for i in ids if i not in found_ids]
+
+    # Buscar estudante
+    student = (
+        db.query(User)
+        .filter(
+            User.id == student_id,
+            User.role == 'student',
+            User.is_active.is_(True),
+        )
+        .first()
+    )
+    if not student:
+        raise HTTPException(
+            status_code=HTTPStatus.NOT_FOUND,
+            detail='Estudante ativo não encontrado',
+        )
+
+    if not student.student_profile:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail='Perfil do estudante não encontrado',
+        )
+
+    existing_ids = {d.id for d in student.student_profile.disciplines}
+    skipped: list[int] = []
+    for i in ids:
+        if i not in found_ids:
+            continue
+        if i not in existing_ids:
+            skipped.append(i)
+            continue
+        # safe to remove
+        student.student_profile.disciplines.remove(found_map[i])
+
+    db.commit()
+    db.refresh(student)
+
+    return BatchDisciplineResponse(
+        student=cast(StudentPublic, student),
+        not_found=not_found,
+        skipped=skipped,
+    )
 
 
 @router.patch(
@@ -456,10 +606,6 @@ def remove_discipline(
     db.refresh(student)
 
     return student
-
-
-class DisciplineStatusUpdate(BaseModel):
-    status: Literal['pendente', 'cursando', 'concluido']
 
 
 @router.patch(

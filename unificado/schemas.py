@@ -65,6 +65,10 @@ class DisciplinePublic(BaseModel):
         return values
 
 
+class DisciplineStatusUpdate(BaseModel):
+    status: Literal['pendente', 'cursando', 'concluido']
+
+
 # ===== SCHEMAS DE ESTUDANTES =====
 
 
@@ -208,6 +212,22 @@ class StudentListPublic(BaseModel):
     ra_number: Optional[str] = None
     course: Optional[CoursePublic] = None
     disciplines_count: int = 0
+
+    class Config:
+        from_attributes = True
+
+
+# ===== SCHEMAS PARA OPERAÇÕES EM LOTE COM DISCIPLINAS =====
+
+
+class BatchDisciplineRequest(BaseModel):
+    discipline_ids: list[int]
+
+
+class BatchDisciplineResponse(BaseModel):
+    student: StudentPublic
+    not_found: list[int] = []
+    skipped: list[int] = []
 
     class Config:
         from_attributes = True
