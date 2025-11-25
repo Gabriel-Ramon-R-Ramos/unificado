@@ -73,3 +73,49 @@ def get_disciplines_map(
     found_map: Dict[int, Discipline] = {d.id: d for d in found}
     not_found = [i for i in ids if i not in found_map]
     return found_map, not_found
+
+
+def get_user(
+    db: Session,
+    user_id: int,
+    role: str | None = None,
+    require_active: bool = True,
+) -> User:
+    """Buscar um usuário genérico por id, opcionalmente filtrando por `role`.
+
+    Levanta 404 se não encontrado.
+    """
+    query = db.query(User).filter(User.id == user_id)
+    if role is not None:
+        query = query.filter(User.role == role)
+    if require_active:
+        query = query.filter(User.is_active.is_(True))
+    user = query.first()
+    if not user:
+        detail = (
+            f'{role.capitalize()} não encontrado'
+            if role
+            else 'Usuário não encontrado'
+        )
+        if require_active:
+            detail = (
+                f'{role.capitalize()} não encontrado'
+                if role
+                else 'Usuário não encontrado'
+            )
+        raise HTTPException(status_code=HTTPStatus.NOT_FOUND, detail=detail)
+    return user
+
+
+def ensure_teacher_profile(user: User):
+    """Garantir que o usuário possui `teacher_profile`.
+
+    Levanta 400 caso contrário.
+    """
+    tp = getattr(user, 'teacher_profile', None)
+    if tp is None:
+        raise HTTPException(
+            status_code=HTTPStatus.BAD_REQUEST,
+            detail='Perfil do professor não encontrado',
+        )
+    return tp

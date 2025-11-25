@@ -4,7 +4,6 @@ from sqlalchemy.orm import Session
 from unificado.database import get_session
 from unificado.models import (
     Course,
-    Discipline,
 )
 from unificado.schemas import (
     CourseCreate,
@@ -14,6 +13,7 @@ from unificado.security import (
     get_current_user_from_token,
     require_role,
 )
+from unificado.utils import get_course_or_404, get_discipline_or_404
 
 router = APIRouter(prefix='/courses', tags=['Cursos'])
 
@@ -59,9 +59,7 @@ def read_course(
 ):
     """Busca um curso específico pelo ID -
     Disponível para todos os usuários autenticados"""
-    course = db.query(Course).filter(Course.id == course_id).first()
-    if not course:
-        raise HTTPException(status_code=404, detail='Curso não encontrado')
+    course = get_course_or_404(db, course_id)
     return course
 
 
@@ -75,9 +73,7 @@ def read_course_disciplines(
     current_user: dict = Depends(get_current_user_from_token),
 ):
     """Lista todas as disciplinas de um curso específico"""
-    course = db.query(Course).filter(Course.id == course_id).first()
-    if not course:
-        raise HTTPException(status_code=404, detail='Curso não encontrado')
+    course = get_course_or_404(db, course_id)
 
     # Retornar disciplinas do curso
     disciplines = []
@@ -103,17 +99,8 @@ def add_discipline_to_course(
     db: Session = Depends(get_session),
 ):
     """Adicionar uma disciplina ao currículo do curso (APENAS ADMIN)"""
-    course = db.query(Course).filter(Course.id == course_id).first()
-    if not course:
-        raise HTTPException(status_code=404, detail='Curso não encontrado')
-
-    discipline = (
-        db.query(Discipline).filter(Discipline.id == discipline_id).first()
-    )
-    if not discipline:
-        raise HTTPException(
-            status_code=404, detail='Disciplina não encontrada'
-        )
+    course = get_course_or_404(db, course_id)
+    discipline = get_discipline_or_404(db, discipline_id)
 
     # Verificar se já está associada (comparar por id)
     if any(d.id == discipline.id for d in course.curriculum):
@@ -150,17 +137,8 @@ def remove_discipline_from_course(
     db: Session = Depends(get_session),
 ):
     """Remover uma disciplina do currículo do curso (APENAS ADMIN)"""
-    course = db.query(Course).filter(Course.id == course_id).first()
-    if not course:
-        raise HTTPException(status_code=404, detail='Curso não encontrado')
-
-    discipline = (
-        db.query(Discipline).filter(Discipline.id == discipline_id).first()
-    )
-    if not discipline:
-        raise HTTPException(
-            status_code=404, detail='Disciplina não encontrada'
-        )
+    course = get_course_or_404(db, course_id)
+    discipline = get_discipline_or_404(db, discipline_id)
 
     # Verificar se está associada
     if not any(d.id == discipline.id for d in course.curriculum):

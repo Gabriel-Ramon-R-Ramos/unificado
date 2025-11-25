@@ -7,8 +7,6 @@ from sqlalchemy.orm import Session, selectinload
 
 from unificado.database import get_session
 from unificado.models import (
-    Course,
-    Discipline,
     StudentProfile,
     User,
     students_disciplines,
@@ -27,6 +25,13 @@ from unificado.security import (
     get_current_user_from_token,
     get_password_hash,
     require_role,
+)
+from unificado.utils import (
+    ensure_student_profile,
+    get_course_or_404,
+    get_discipline_or_404,
+    get_disciplines_map,
+    get_student,
 )
 
 router = APIRouter(prefix='/students', tags=['Estudantes'])
@@ -67,15 +72,9 @@ def create_student(
             )
     # Verificar existência do curso (se fornecido)
     course = None
-    if getattr(student, 'course_id', None):
-        course = (
-            db.query(Course).filter(Course.id == student.course_id).first()
-        )
-        if not course:
-            raise HTTPException(
-                status_code=HTTPStatus.NOT_FOUND,
-                detail='Curso não encontrado',
-            )
+    course_id_val = getattr(student, 'course_id', None)
+    if course_id_val is not None:
+        course = get_course_or_404(db, course_id_val)
 
     user = User(
         username=student.username,
@@ -314,21 +313,21 @@ def update_student(
         # Validar existência do curso antes de atualizar
         # e adicionar disciplinas
         new_course_id = student.course_id
-        course = db.query(Course).filter(Course.id == new_course_id).first()
-        if not course:
+        if new_course_id is None:
             raise HTTPException(
-                status_code=HTTPStatus.NOT_FOUND,
-                detail='Curso não encontrado',
+                status_code=HTTPStatus.BAD_REQUEST, detail='Curso inválido'
             )
+        course = get_course_or_404(db, new_course_id)
         # Atualizar course_id e adicionar disciplinas do curso
         # (sem remover as existentes)
-        user.student_profile.course_id = new_course_id
+        sp = user.student_profile
+        sp.course_id = new_course_id
         db.flush()
         if getattr(course, 'curriculum', None):
-            existing_ids = {d.id for d in user.student_profile.disciplines}
+            existing_ids = {d.id for d in sp.disciplines}
             for disc in course.curriculum:
                 if disc.id not in existing_ids:
-                    user.student_profile.disciplines.append(disc)
+                    sp.disciplines.append(disc)
 
     db.commit()
     db.refresh(user)
@@ -349,49 +348,21 @@ def add_disciplines(
 ):
     """Associar disciplina a estudante - APENAS ADMIN"""
     """Associa uma disciplina a um estudante"""
-    # Buscar disciplina
-    discipline = (
-        db.query(Discipline).filter(Discipline.id == discipline_id).first()
-    )
-    if not discipline:
-        raise HTTPException(
-            status_code=HTTPStatus.NOT_FOUND,
-            detail='Disciplina não encontrada',
-        )
-
-    # Buscar estudante e carregar o perfil
-    student = (
-        db.query(User)
-        .filter(
-            User.id == student_id,
-            User.role == 'student',
-            User.is_active.is_(True),  # Apenas usuários ativos
-        )
-        .first()
-    )
-    if not student:
-        raise HTTPException(
-            status_code=HTTPStatus.NOT_FOUND,
-            detail='Estudante ativo não encontrado',
-        )
-
-    # Verificar se o estudante tem perfil
-    if not student.student_profile:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail='Perfil do estudante não encontrado',
-        )
+    # Validar disciplina e estudante
+    discipline = get_discipline_or_404(db, discipline_id)
+    student = get_student(db, student_id, require_active=True)
+    sp = ensure_student_profile(student)
 
     # Verificar se a disciplina já está associada
     # (comparar por id para ser robusto)
-    if any(d.id == discipline.id for d in student.student_profile.disciplines):
+    if any(d.id == discipline.id for d in sp.disciplines):
         raise HTTPException(
             status_code=HTTPStatus.BAD_REQUEST,
             detail='Esta disciplina já está associada ao estudante',
         )
 
     # Adicionar a disciplina
-    student.student_profile.disciplines.append(discipline)
+    sp.disciplines.append(discipline)
     db.commit()
     db.refresh(student)
 
@@ -423,33 +394,13 @@ def add_disciplines_batch(
         )
 
     # Buscar disciplinas existentes
-    found = db.query(Discipline).filter(Discipline.id.in_(ids)).all()
-    found_ids = {d.id for d in found}
-    not_found = [i for i in ids if i not in found_ids]
+    found_map, not_found = get_disciplines_map(db, ids)
+    found = list(found_map.values())
 
-    # Buscar estudante e validar
-    student = (
-        db.query(User)
-        .filter(
-            User.id == student_id,
-            User.role == 'student',
-            User.is_active.is_(True),
-        )
-        .first()
-    )
-    if not student:
-        raise HTTPException(
-            status_code=HTTPStatus.NOT_FOUND,
-            detail='Estudante ativo não encontrado',
-        )
+    student = get_student(db, student_id, require_active=True)
+    sp = ensure_student_profile(student)
 
-    if not student.student_profile:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail='Perfil do estudante não encontrado',
-        )
-
-    existing_ids = {d.id for d in student.student_profile.disciplines}
+    existing_ids = {d.id for d in sp.disciplines}
     skipped: list[int] = []
     to_add = []
     for d in found:
@@ -459,7 +410,7 @@ def add_disciplines_batch(
             to_add.append(d)
 
     for d in to_add:
-        student.student_profile.disciplines.append(d)
+        sp.disciplines.append(d)
 
     db.commit()
     db.refresh(student)
@@ -496,44 +447,20 @@ def remove_disciplines_batch(
             detail='Nenhuma disciplina informada',
         )
 
-    # Buscar disciplinas existentes
-    found = db.query(Discipline).filter(Discipline.id.in_(ids)).all()
-    found_map = {d.id: d for d in found}
-    found_ids = set(found_map.keys())
-    not_found = [i for i in ids if i not in found_ids]
+    found_map, not_found = get_disciplines_map(db, ids)
+    student = get_student(db, student_id, require_active=True)
+    sp = ensure_student_profile(student)
 
-    # Buscar estudante
-    student = (
-        db.query(User)
-        .filter(
-            User.id == student_id,
-            User.role == 'student',
-            User.is_active.is_(True),
-        )
-        .first()
-    )
-    if not student:
-        raise HTTPException(
-            status_code=HTTPStatus.NOT_FOUND,
-            detail='Estudante ativo não encontrado',
-        )
-
-    if not student.student_profile:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail='Perfil do estudante não encontrado',
-        )
-
-    existing_ids = {d.id for d in student.student_profile.disciplines}
+    existing_ids = {d.id for d in sp.disciplines}
     skipped: list[int] = []
     for i in ids:
-        if i not in found_ids:
+        if i not in found_map:
             continue
         if i not in existing_ids:
             skipped.append(i)
             continue
         # safe to remove
-        student.student_profile.disciplines.remove(found_map[i])
+        sp.disciplines.remove(found_map[i])
 
     db.commit()
     db.refresh(student)
@@ -558,50 +485,19 @@ def remove_discipline(
 ):
     """Remover disciplina de estudante - APENAS ADMIN"""
     """Remove uma disciplina de um estudante"""
-    # Buscar disciplina
-    discipline = (
-        db.query(Discipline).filter(Discipline.id == discipline_id).first()
-    )
-    if not discipline:
-        raise HTTPException(
-            status_code=HTTPStatus.NOT_FOUND,
-            detail='Disciplina não encontrada',
-        )
-
-    # Buscar estudante
-    student = (
-        db.query(User)
-        .filter(
-            User.id == student_id,
-            User.role == 'student',
-            User.is_active.is_(True),  # Apenas usuários ativos
-        )
-        .first()
-    )
-    if not student:
-        raise HTTPException(
-            status_code=HTTPStatus.NOT_FOUND,
-            detail='Estudante ativo não encontrado',
-        )
-
-    # Verificar se o estudante tem perfil
-    if not student.student_profile:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail='Perfil do estudante não encontrado',
-        )
+    discipline = get_discipline_or_404(db, discipline_id)
+    student = get_student(db, student_id, require_active=True)
+    sp = ensure_student_profile(student)
 
     # Verificar se a disciplina está associada (comparar por id)
-    if not any(
-        d.id == discipline.id for d in student.student_profile.disciplines
-    ):
+    if not any(d.id == discipline.id for d in sp.disciplines):
         raise HTTPException(
             status_code=HTTPStatus.BAD_REQUEST,
             detail='Esta disciplina não está associada ao estudante',
         )
 
     # Remover a disciplina
-    student.student_profile.disciplines.remove(discipline)
+    sp.disciplines.remove(discipline)
     db.commit()
     db.refresh(student)
 
@@ -629,23 +525,8 @@ def update_discipline_status(
     - `cursando`: estudante está em andamento na disciplina.
     - `concluido`: estudante finalizou e concluiu a disciplina.
     """
-    # Verificar estudante
-    student = (
-        db.query(User)
-        .filter(User.id == student_id, User.role == 'student')
-        .first()
-    )
-    if not student:
-        raise HTTPException(
-            status_code=HTTPStatus.NOT_FOUND, detail='Estudante não encontrado'
-        )
-    # Verificar se o estudante possui perfil (student_profile)
-    sp = getattr(student, 'student_profile', None)
-    if sp is None:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail='Perfil do estudante não encontrado',
-        )
+    student = get_student(db, student_id, require_active=False)
+    sp = ensure_student_profile(student)
 
     sp_id = sp.id
 

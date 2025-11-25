@@ -14,6 +14,7 @@ from unificado.graph_insights import (
     visualize_student_progress,
 )
 from unificado.security import require_role
+from unificado.utils import get_user
 
 router = APIRouter(prefix='/insights', tags=['Insights'])
 
@@ -128,6 +129,8 @@ def get_recommendations(
 ) -> JSONResponse:
     """Recomenda disciplinas para o estudante informado
     e explica a vantagem."""
+    # Validar existência do estudante
+    get_user(db, user_id, role='student', require_active=False)
     recs = recommend_disciplines_for_student(db, user_id)
     return JSONResponse(
         status_code=200,
@@ -165,6 +168,8 @@ def get_graduation_path(
                 content={'detail': 'required must be comma-separated ints'},
             )
 
+    # Validar existência do estudante
+    get_user(db, user_id, role='student', require_active=False)
     path = calculate_graduation_path(db, user_id, required_ids)
     return JSONResponse(
         status_code=200,
@@ -185,6 +190,8 @@ def get_progress(
     _admin: dict = Depends(require_role('admin')),
 ) -> JSONResponse:
     """Retorna uma representação leve do progresso do estudante no grafo."""
+    # Validar existência do estudante
+    get_user(db, user_id, role='student', require_active=False)
     progress = visualize_student_progress(db, user_id)
     return JSONResponse(
         status_code=200,

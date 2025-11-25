@@ -14,6 +14,7 @@ from unificado.security import (
     get_current_user_from_token,
     require_role,
 )
+from unificado.utils import get_user
 
 router = APIRouter(prefix='/users', tags=['Usuários'])
 
@@ -82,13 +83,7 @@ def toggle_user_active_status(
     """
     Ativar/Desativar usuário (Soft Delete)
     """
-    user = db.query(User).filter(User.id == user_id).first()
-
-    if not user:
-        raise HTTPException(
-            status_code=HTTPStatus.NOT_FOUND,
-            detail='Usuário não encontrado',
-        )
+    user = get_user(db, user_id, require_active=False)
 
     # Não permitir desativar o próprio usuário admin
     if user.id == current_user['id'] and user.role == 'admin':

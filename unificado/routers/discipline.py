@@ -6,7 +6,6 @@ from sqlalchemy.orm import Session
 
 from unificado.database import get_session
 from unificado.models import (
-    Course,
     Discipline,
 )
 from unificado.schemas import (
@@ -17,6 +16,7 @@ from unificado.security import (
     get_current_user_from_token,
     require_role,
 )
+from unificado.utils import get_course_or_404, get_discipline_or_404
 
 router = APIRouter(prefix='/disciplines', tags=['Disciplinas'])
 
@@ -35,12 +35,7 @@ def create_discipline(
     courses = []
     if discipline.course_ids:
         for course_id in discipline.course_ids:
-            course = db.query(Course).filter(Course.id == course_id).first()
-            if not course:
-                raise HTTPException(
-                    status_code=HTTPStatus.NOT_FOUND,
-                    detail=f'Curso com ID {course_id} não encontrado',
-                )
+            course = get_course_or_404(db, course_id)
             courses.append(course)
 
     # Verificar se o nome da disciplina já existe
@@ -109,13 +104,7 @@ def read_discipline_by_id(
 ):
     """Busca uma disciplina específica pelo ID -
     Disponível para todos os usuários autenticados"""
-    discipline = (
-        db.query(Discipline).filter(Discipline.id == discipline_id).first()
-    )
-    if not discipline:
-        raise HTTPException(
-            status_code=404, detail='Disciplina não encontrada'
-        )
+    discipline = get_discipline_or_404(db, discipline_id)
     return discipline
 
 
@@ -139,22 +128,8 @@ def add_prerequisite(
         )
 
     # Busca a disciplina principal
-    discipline = (
-        db.query(Discipline).filter(Discipline.id == discipline_id).first()
-    )
-    if not discipline:
-        raise HTTPException(
-            status_code=404, detail='Disciplina não encontrada'
-        )
-
-    # Busca o pré-requisito
-    prerequisite = (
-        db.query(Discipline).filter(Discipline.id == prerequisite_id).first()
-    )
-    if not prerequisite:
-        raise HTTPException(
-            status_code=404, detail='Pré-requisito não encontrado'
-        )
+    discipline = get_discipline_or_404(db, discipline_id)
+    prerequisite = get_discipline_or_404(db, prerequisite_id)
 
     # Verificar se o pré-requisito já existe
     if prerequisite in discipline.prerequisites:
@@ -182,18 +157,8 @@ def add_discipline_to_course(
 ):
     """Associa uma disciplina a um curso"""
     # Buscar a disciplina
-    discipline = (
-        db.query(Discipline).filter(Discipline.id == discipline_id).first()
-    )
-    if not discipline:
-        raise HTTPException(
-            status_code=404, detail='Disciplina não encontrada'
-        )
-
-    # Buscar o curso
-    course = db.query(Course).filter(Course.id == course_id).first()
-    if not course:
-        raise HTTPException(status_code=404, detail='Curso não encontrado')
+    discipline = get_discipline_or_404(db, discipline_id)
+    course = get_course_or_404(db, course_id)
 
     # Verificar se a associação já existe
     if course in discipline.courses:
@@ -221,18 +186,8 @@ def remove_discipline_from_course(
 ):
     """Remove a associação entre uma disciplina e um curso"""
     # Buscar a disciplina
-    discipline = (
-        db.query(Discipline).filter(Discipline.id == discipline_id).first()
-    )
-    if not discipline:
-        raise HTTPException(
-            status_code=404, detail='Disciplina não encontrada'
-        )
-
-    # Buscar o curso
-    course = db.query(Course).filter(Course.id == course_id).first()
-    if not course:
-        raise HTTPException(status_code=404, detail='Curso não encontrado')
+    discipline = get_discipline_or_404(db, discipline_id)
+    course = get_course_or_404(db, course_id)
 
     # Verificar se a associação existe
     if course not in discipline.courses:

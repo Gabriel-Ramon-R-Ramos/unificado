@@ -5,7 +5,6 @@ from sqlalchemy.orm import Session
 
 from unificado.database import get_session
 from unificado.models import (
-    Discipline,
     TeacherProfile,
     User,
 )
@@ -19,6 +18,12 @@ from unificado.security import (
     get_current_user_from_token,
     get_password_hash,
     require_role,
+)
+from unificado.utils import (
+    ensure_teacher_profile,
+    get_discipline_or_404,
+    get_disciplines_map,
+    get_user,
 )
 
 router = APIRouter(prefix='/teachers', tags=['Professores'])
@@ -67,15 +72,12 @@ def create_teacher(
 
     # Associar disciplinas se fornecidas
     if teacher.disciplines:
-        disciplines_id = set(teacher.disciplines)
-        disciplines = (
-            db.query(Discipline)
-            .filter(Discipline.id.in_(disciplines_id))
-            .all()
-        )
-        teacher_profile.disciplines.extend(disciplines)
-        db.commit()
-        db.refresh(teacher_profile)
+        disciplines_id = list(dict.fromkeys(teacher.disciplines))
+        found_map, not_found = get_disciplines_map(db, disciplines_id)
+        if found_map:
+            teacher_profile.disciplines.extend(list(found_map.values()))
+            db.commit()
+            db.refresh(teacher_profile)
 
     # Retornar a instância `user` e deixar o Pydantic serializar
     # via `TeacherPublic` (validador transforma o profile em disciplinas)
@@ -179,28 +181,11 @@ def read_teacher(
             detail='Professores só podem visualizar seus próprios dados',
         )
 
-    # Buscar professor
-    query = db.query(User).filter(
-        User.id == teacher_id, User.role == 'teacher'
+    # Buscar professor (admin pode ver inativos)
+    require_active = current_user['role'] != 'admin'
+    teacher = get_user(
+        db, teacher_id, role='teacher', require_active=require_active
     )
-
-    # Apenas admin pode ver usuários inativos
-    if current_user['role'] != 'admin':
-        query = query.filter(User.is_active.is_(True))
-
-    teacher = query.first()
-
-    if not teacher:
-        if current_user['role'] == 'admin':
-            raise HTTPException(
-                status_code=HTTPStatus.NOT_FOUND,
-                detail='Professor não encontrado',
-            )
-        else:
-            raise HTTPException(
-                status_code=HTTPStatus.NOT_FOUND,
-                detail='Professor não encontrado ou inativo',
-            )
     return teacher
 
 
@@ -215,23 +200,7 @@ def update_teacher(
     current_user: dict = Depends(require_role('admin')),
 ):
     """Atualizar dados do professor - APENAS ADMIN"""
-    user = (
-        db.query(User)
-        .filter(
-            User.id == teacher_id,
-            User.role == 'teacher',
-            User.is_active.is_(
-                True
-            ),  # Apenas usuários ativos podem ser atualizados
-        )
-        .first()
-    )
-
-    if not user:
-        raise HTTPException(
-            status_code=HTTPStatus.NOT_FOUND,
-            detail='Professor ativo não encontrado',
-        )
+    user = get_user(db, teacher_id, role='teacher', require_active=True)
 
     # Atualizando nome do usuário
     if teacher.username is not None:
@@ -286,48 +255,20 @@ def add_discipline_to_teacher(
     current_user: dict = Depends(require_role('admin')),
 ):
     """Associa uma disciplina a um professor - APENAS ADMIN"""
-    # Buscar disciplina
-    discipline = (
-        db.query(Discipline).filter(Discipline.id == discipline_id).first()
-    )
-    if not discipline:
-        raise HTTPException(
-            status_code=HTTPStatus.NOT_FOUND,
-            detail='Disciplina não encontrada',
-        )
-
-    # Buscar professor
-    teacher = (
-        db.query(User)
-        .filter(
-            User.id == teacher_id,
-            User.role == 'teacher',
-            User.is_active.is_(True),  # Apenas usuários ativos
-        )
-        .first()
-    )
-    if not teacher:
-        raise HTTPException(
-            status_code=HTTPStatus.NOT_FOUND,
-            detail='Professor ativo não encontrado',
-        )
-
-    # Verificar se o professor tem perfil
-    if not teacher.teacher_profile:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail='Perfil do professor não encontrado',
-        )
+    # Validar disciplina e buscar professor
+    discipline = get_discipline_or_404(db, discipline_id)
+    teacher = get_user(db, teacher_id, role='teacher', require_active=True)
+    tp = ensure_teacher_profile(teacher)
 
     # Verificar se a disciplina já está associada
-    if discipline in teacher.teacher_profile.disciplines:
+    if discipline in tp.disciplines:
         raise HTTPException(
             status_code=HTTPStatus.BAD_REQUEST,
             detail='Esta disciplina já está associada ao professor',
         )
 
     # Adicionar a disciplina
-    teacher.teacher_profile.disciplines.append(discipline)
+    tp.disciplines.append(discipline)
     db.commit()
     db.refresh(teacher)
 
@@ -346,48 +287,19 @@ def remove_discipline_from_teacher(
     current_user: dict = Depends(require_role('admin')),
 ):
     """Remove uma disciplina de um professor - APENAS ADMIN"""
-    # Buscar disciplina
-    discipline = (
-        db.query(Discipline).filter(Discipline.id == discipline_id).first()
-    )
-    if not discipline:
-        raise HTTPException(
-            status_code=HTTPStatus.NOT_FOUND,
-            detail='Disciplina não encontrada',
-        )
-
-    # Buscar professor
-    teacher = (
-        db.query(User)
-        .filter(
-            User.id == teacher_id,
-            User.role == 'teacher',
-            User.is_active.is_(True),  # Apenas usuários ativos
-        )
-        .first()
-    )
-    if not teacher:
-        raise HTTPException(
-            status_code=HTTPStatus.NOT_FOUND,
-            detail='Professor ativo não encontrado',
-        )
-
-    # Verificar se o professor tem perfil
-    if not teacher.teacher_profile:
-        raise HTTPException(
-            status_code=HTTPStatus.BAD_REQUEST,
-            detail='Perfil do professor não encontrado',
-        )
+    discipline = get_discipline_or_404(db, discipline_id)
+    teacher = get_user(db, teacher_id, role='teacher', require_active=True)
+    tp = ensure_teacher_profile(teacher)
 
     # Verificar se a disciplina está associada
-    if discipline not in teacher.teacher_profile.disciplines:
+    if discipline not in tp.disciplines:
         raise HTTPException(
             status_code=HTTPStatus.BAD_REQUEST,
             detail='Esta disciplina não está associada ao professor',
         )
 
     # Remover a disciplina
-    teacher.teacher_profile.disciplines.remove(discipline)
+    tp.disciplines.remove(discipline)
     db.commit()
     db.refresh(teacher)
 
