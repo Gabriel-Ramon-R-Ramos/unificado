@@ -88,7 +88,7 @@ def create_student(
     student_profile = StudentProfile(
         user_id=user.id,
         ra_number=student.ra_number,
-        course_id=getattr(student, 'course_id', None),
+        course_id=course_id_val,
     )
     db.add(student_profile)
 
@@ -103,15 +103,11 @@ def create_student(
         for disc in course.curriculum:
             if disc.id not in existing_ids:
                 student_profile.disciplines.append(disc)
-
-    # A confirmação/rollback da transação será feita pelo gerenciador
-    # de contexto em `get_session` quando a dependência for finalizada.
+    db.commit()
     db.refresh(user)
     if user.student_profile:
         db.refresh(user.student_profile)
 
-    # Retornar o objeto User; o Pydantic model `StudentPublic` fará
-    # a extração dos dados relacionados (incluindo disciplinas)
     return user
 
 
